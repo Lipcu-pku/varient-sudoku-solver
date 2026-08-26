@@ -2712,8 +2712,11 @@ window.SudokuApp = (function () {
   }
   function updateNav() {
     const many = state.solutions.length > 1;
-    state.dom.prevBtn.disabled = !many || state.solutionIdx <= 0;
-    state.dom.nextBtn.disabled = !many || state.solutionIdx >= state.solutions.length - 1;
+    /* Pencilmark mode shows candidates from every solution at once — the
+       per-solution navigator has nothing to advance, so disable it there. */
+    const pm = state.pencilmarkOn;
+    state.dom.prevBtn.disabled = pm || !many || state.solutionIdx <= 0;
+    state.dom.nextBtn.disabled = pm || !many || state.solutionIdx >= state.solutions.length - 1;
     if (state.dom.pencilBtn) {
       const n = state.solutions.length;
       const cap = state.reachedCap;
@@ -2849,6 +2852,7 @@ window.SudokuApp = (function () {
       }
       renderSolution(0);
       drawPencilmarks();
+      updateNav();
     });
     state.dom.pencilBtn = pencilBtn;
     const resetBtn = btn(T.reset, {
