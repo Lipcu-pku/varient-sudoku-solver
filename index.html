@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sudoku Solver</title>
+<link rel="stylesheet" href="styles.css">
+<script src="theme.js"></script>
+</head>
+<body>
+<header class="site-header">
+  <div class="brand" id="brand">Sudoku Solver</div>
+  <div class="header-controls">
+    <button class="theme-btn"></button>
+    <button class="lang-btn" data-lang="en">English</button>
+    <button class="lang-btn" data-lang="zh">简体中文</button>
+  </div>
+</header>
+
+<section class="page-intro">
+  <h1 id="page-title">Sudoku Solver</h1>
+  <p class="subtitle" id="page-subtitle">4×4, 6×6, 8×8, 9×9 — live solve as you type</p>
+</section>
+
+<main>
+  <section class="method-info">
+    <h2 id="sudoku-name"></h2>
+    <p id="sudoku-description"></p>
+  </section>
+
+  <section class="solver-block" id="sudoku-container"></section>
+</main>
+
+<script src="constraints/registry.js"></script>
+<script src="constraints/renban.js"></script>
+<script src="constraints/palindrome.js"></script>
+<script src="constraints/entropic.js"></script>
+<script src="constraints/parity-line.js"></script>
+<script src="constraints/arrow.js"></script>
+<script src="constraints/quadruple.js"></script>
+<script src="sudoku-core.js"></script>
+<script src="sudoku.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

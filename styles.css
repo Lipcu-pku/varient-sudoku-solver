@@ -1,0 +1,763 @@
+* { box-sizing: border-box; }
+
+:root, :root[data-theme="dark"] {
+  --bg: #0f1220;
+  --surface: #1a1e33;
+  --surface-2: #232849;
+  --border: #2f3560;
+  --text: #e8ebff;
+  --muted: #9098c9;
+  --accent: #6c85ff;
+  --accent-hover: #8ba0ff;
+  --success: #4ade80;
+  --danger: #f87171;
+  --shadow: 0 1px 2px rgba(0,0,0,0.35);
+}
+
+:root[data-theme="light"] {
+  --bg: #f5f6fb;
+  --surface: #ffffff;
+  --surface-2: #eef0f9;
+  --border: #d5d9ec;
+  --text: #1a1e33;
+  --muted: #5b6289;
+  --accent: #4a63d8;
+  --accent-hover: #3852c4;
+  --success: #16a34a;
+  --danger: #dc2626;
+  --shadow: 0 1px 2px rgba(20, 25, 60, 0.08);
+}
+
+body {
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.5;
+}
+
+/* --- Header --- */
+.site-header {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.75rem 1.25rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+  flex-wrap: wrap;
+}
+
+.site-header .brand {
+  font-weight: 700;
+  color: var(--accent);
+  font-size: 1.05rem;
+  flex: 1;
+}
+
+.header-controls {
+  display: flex;
+  gap: 0.35rem;
+  align-items: center;
+}
+
+.theme-btn, .lang-btn {
+  padding: 0.35rem 0.75rem;
+  background: var(--surface-2);
+  color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: all 0.15s;
+  font-family: inherit;
+}
+
+.theme-btn:hover, .lang-btn:hover:not(.active) {
+  color: var(--text);
+  border-color: var(--accent);
+}
+
+.lang-btn.active {
+  background: var(--accent);
+  color: white;
+  border-color: var(--accent);
+}
+
+/* --- Page intro --- */
+.page-intro {
+  padding: 1.25rem 1.5rem 0.25rem;
+  text-align: center;
+}
+
+.page-intro h1 {
+  margin: 0;
+  font-size: 1.6rem;
+  color: var(--accent);
+}
+
+.page-intro .subtitle {
+  margin: 0.25rem 0 0;
+  color: var(--muted);
+  font-size: 0.95rem;
+}
+
+/* --- Main container --- */
+main {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+section {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 1rem 1.25rem;
+}
+
+.method-info h2 {
+  margin: 0 0 0.35rem;
+  font-size: 1.15rem;
+  color: var(--accent);
+}
+
+.method-info p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+/* --- Size picker (pill buttons) --- */
+.pill-picker {
+  display: flex;
+  gap: 0.35rem;
+  justify-content: center;
+  margin: 0.4rem 0 0.2rem;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.pill-btn {
+  padding: 0.3rem 0.7rem;
+  background: var(--surface-2);
+  color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: all 0.15s;
+  font-family: inherit;
+}
+.pill-btn:hover { color: var(--text); border-color: var(--accent); }
+.pill-btn.active {
+  background: var(--accent);
+  color: white;
+  border-color: var(--accent);
+}
+
+/* --- Sudoku grid --- */
+.solver-block {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 1rem 1.25rem;
+}
+
+/* Outer frame that holds skyscraper edge cells around the puzzle.
+   `gap: 0` is critical so the inner grid cells and outer sky cells share
+   the same track layout — any gap would offset every column past the
+   first, misaligning digits with their edge clues. */
+.sudoku-frame {
+  display: grid;
+  justify-content: center;
+  margin: 0.75rem auto;
+  gap: 0;
+}
+
+/* Skyscraper clue cells are real <input>s so users can type numbers
+   directly, exactly like the main grid. They sit flush against the outer
+   edge of the sudoku grid with a subtle offset frame. */
+.sudoku-frame .sky-cell {
+  width: var(--cell-size, 40px);
+  height: var(--cell-size, 40px);
+  padding: 0;
+  margin: 0;
+  background: var(--surface-2);
+  color: var(--muted);
+  text-align: center;
+  font-family: "SF Mono", "Consolas", monospace;
+  font-size: calc(var(--cell-size, 40px) * 0.42);
+  border: 1px dashed var(--border);
+  border-radius: 3px;
+  caret-color: transparent;
+}
+.sudoku-frame .sky-cell::selection { background: transparent; }
+.sudoku-frame .sky-cell:focus {
+  outline: none;
+  border-color: var(--accent);
+  color: var(--text);
+  background: var(--surface);
+}
+.sudoku-frame .sky-cell.filled { color: var(--accent); font-weight: 700; }
+
+.sudoku-grid {
+  position: relative;
+  display: grid;
+  gap: 0;
+  border-radius: 0;
+  width: fit-content;
+  height: fit-content;
+  /* Outer grid line matches the internal box/region line: each internal
+     boundary contributes 1.5px from either side (=3px centered on the
+     shared edge), so the outer perimeter uses a 3px outline pulled 1.5px
+     inward so half sits inside the grid and half outside — the visible
+     line is 3px wide, centered exactly on the grid's outer edge. */
+  outline: 3px solid var(--muted);
+  outline-offset: -1.5px;
+}
+
+.sudoku-cell {
+  position: relative;
+  width: var(--cell-size, 40px);
+  height: var(--cell-size, 40px);
+  border: 1px solid var(--border);
+  background-color: var(--surface);
+  text-align: center;
+  font-family: "SF Mono", "Consolas", monospace;
+  font-size: calc(var(--cell-size, 40px) * 0.5);
+  color: var(--text);
+  padding: 0;
+  caret-color: transparent;
+  text-transform: uppercase;
+}
+
+.sudoku-cell:focus {
+  outline: none;
+  background-color: var(--surface-2);
+  border-color: var(--accent);
+}
+
+.sudoku-cell::selection { background: transparent; }
+
+.sudoku-cell.given { font-weight: 700; color: var(--accent); }
+.sudoku-cell.error { background-color: rgba(220, 38, 38, 0.18); color: var(--danger); }
+
+.sudoku-cell::placeholder {
+  color: var(--muted);
+  font-weight: 400;
+  opacity: 0.45;
+  text-align: center;
+}
+
+/* Box / region borders: 1.5px from each side of a shared edge combine into
+   a single 3px muted line centered on that edge. Matches the grid's outer
+   outline so all box/region separators read at exactly one width. */
+.sudoku-cell.bx-r { border-right:  1.5px solid var(--muted); }
+.sudoku-cell.bx-b { border-bottom: 1.5px solid var(--muted); }
+.sudoku-cell.bx-l { border-left:   1.5px solid var(--muted); }
+.sudoku-cell.bx-t { border-top:    1.5px solid var(--muted); }
+
+/* Region tinting. Shown only while the Regions tool is active so the tint
+   doesn't fight other overlays for attention — but every cell (including
+   plain rectangular boxes) gets a colored fill so a half-painted region
+   never renders as two colors. */
+.sudoku-grid.region-mode .sudoku-cell {
+  background-color: var(--region-bg, var(--surface));
+}
+
+/* Spectradoku color tinting. Always visible: the coloring is part of the
+   puzzle's constraint (each row/col/box needs all N colors, and each
+   digit must appear once in every color), not a drawing aid — so the
+   solver's answer needs its colors on display in every tool. Digits get
+   a solid dark fill plus a bright white outline so they read cleanly on
+   every hue in the palette (yellow, gray, black included). */
+.sudoku-grid .sudoku-cell.rainbow-tinted {
+  background-color: var(--rainbow-bg, var(--surface));
+  color: #111;
+  text-shadow:
+    -1.2px -1.2px 0 #fff,
+     1.2px -1.2px 0 #fff,
+    -1.2px  1.2px 0 #fff,
+     1.2px  1.2px 0 #fff,
+     0     -1.2px 0 #fff,
+     0      1.2px 0 #fff,
+    -1.2px  0     0 #fff,
+     1.2px  0     0 #fff;
+}
+/* Given digits keep the accent (blue) so users can still tell clues apart
+   from solver output; the white outline sits behind the digit either way.
+   Solver digits (hint-only + their placeholders) get a lighter gray so the
+   given / solved split reads at a glance on top of the vivid Spectradoku
+   tint. The white outline keeps them legible even on yellow / white areas. */
+.sudoku-grid .sudoku-cell.rainbow-tinted.given { color: var(--accent); }
+.sudoku-grid .sudoku-cell.rainbow-tinted.hint-only { color: #888; }
+.sudoku-grid .sudoku-cell.rainbow-tinted::placeholder {
+  color: #888;
+  opacity: 0.9;
+  text-shadow:
+    -1.2px -1.2px 0 #fff,
+     1.2px -1.2px 0 #fff,
+    -1.2px  1.2px 0 #fff,
+     1.2px  1.2px 0 #fff;
+}
+/* In region-mode the region tint takes precedence over rainbow so the
+   partition reads cleanly while the user is editing it. When it does,
+   remove the outline treatment so digits fall back to the normal text
+   color that reads well on the pastel region tint. */
+.sudoku-grid.region-mode .sudoku-cell.rainbow-tinted {
+  background-color: var(--region-bg, var(--surface));
+  color: var(--text);
+  text-shadow: none;
+}
+.sudoku-grid.region-mode .sudoku-cell.rainbow-tinted::placeholder {
+  color: var(--muted);
+  opacity: 0.45;
+  text-shadow: none;
+}
+
+/* Conflict wash still wins over the rainbow tint so errors stay obvious. */
+.sudoku-grid .sudoku-cell.rainbow-tinted.error {
+  background-color: rgba(220, 38, 38, 0.55);
+  color: var(--danger);
+  text-shadow:
+    -1.2px -1.2px 0 #fff,
+     1.2px -1.2px 0 #fff,
+    -1.2px  1.2px 0 #fff,
+     1.2px  1.2px 0 #fff;
+}
+
+/* Selection region highlight for multi-cell draft tools (thermo / cage /
+   whisper / region-sum / modular). Selected cells share a gray fill; the
+   accent-colored border is drawn only on perimeter edges via `.sel-t/b/l/r`
+   so the group reads as a single contiguous region — just like the way a
+   focused cell reads while typing. */
+.sudoku-cell.sel {
+  background-color: var(--surface-2);
+  z-index: 2;
+}
+.sudoku-cell.sel.sel-t { border-top:    2px solid var(--accent); }
+.sudoku-cell.sel.sel-b { border-bottom: 2px solid var(--accent); }
+.sudoku-cell.sel.sel-l { border-left:   2px solid var(--accent); }
+.sudoku-cell.sel.sel-r { border-right:  2px solid var(--accent); }
+/* Sel wins over region + rainbow tints so drafts read cleanly. */
+.sudoku-grid.region-mode .sudoku-cell.sel,
+.sudoku-grid .sudoku-cell.sel.rainbow-tinted {
+  background-color: var(--surface-2);
+}
+
+/* Cage rendering.  Both the boundary and the sum labels live on an SVG
+   overlay so they can sit above cell backgrounds without being clipped by
+   the <input> replaced element. The outline is drawn inset from every
+   edge so it doesn't coincide with the cell border. */
+.cage-svg {
+  position: absolute;
+  top: 0; left: 0;
+  pointer-events: none;
+  overflow: visible;
+}
+.cage-svg .outline {
+  fill: none;
+  stroke: var(--muted);
+  stroke-width: 0.9;
+  stroke-dasharray: 3 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.cage-svg .outline.draft {
+  stroke: var(--accent);
+  stroke-width: 1.1;
+  stroke-dasharray: 4 2;
+}
+.cage-svg .sum {
+  fill: var(--text);
+  font-weight: 700;
+  font-family: "SF Mono", "Consolas", monospace;
+  paint-order: stroke;
+  stroke: var(--surface);
+  stroke-width: 3;
+  stroke-linejoin: round;
+  dominant-baseline: hanging;
+}
+.cage-svg .sum.draft { fill: var(--accent); }
+
+/* Tool tabs + panels.
+   All group rows share the same left edge (their buttons line up in a column),
+   but the whole block is centered on the page via auto side margins on the
+   inline-flex wrapper. */
+.tool-tabs-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin: 0.5rem auto 0.35rem;
+  width: fit-content;
+  max-width: 100%;
+  align-items: flex-start;   /* rows flush to the wrapper's left edge */
+}
+.tool-tabs {
+  display: flex;
+  gap: 0.35rem;
+  justify-content: flex-start;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.tab-group-label {
+  font-size: 0.72rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-right: 0.35rem;
+  min-width: 5.5rem;
+  text-align: left;
+  flex-shrink: 0;
+}
+.tool-tab {
+  padding: 0.35rem 0.75rem;
+  background: var(--surface-2);
+  color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  font-size: 0.85rem;
+  cursor: pointer;
+  font-family: inherit;
+  transition: all 0.15s;
+}
+.tool-tab:hover { color: var(--text); border-color: var(--accent); }
+.tool-tab.active { background: var(--accent); color: white; border-color: var(--accent); }
+
+.tool-panel {
+  margin: 0.4rem auto 0.75rem;
+  padding: 0.6rem 0.9rem;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  max-width: 720px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+.tool-panel label { color: var(--muted); }
+.tool-panel .hint { font-style: italic; }
+.tool-panel input[type="number"] {
+  width: 4.25rem;
+  padding: 0.25rem 0.4rem;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-family: inherit;
+  font-size: 0.85rem;
+}
+.tool-panel input[type="checkbox"] { accent-color: var(--accent); }
+.tool-panel .chip {
+  padding: 0.25rem 0.55rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  cursor: pointer;
+  color: var(--muted);
+}
+.tool-panel .chip:hover { color: var(--text); border-color: var(--accent); }
+.tool-panel .chip.active { background: var(--accent); color: white; border-color: var(--accent); }
+.tool-panel .swatch {
+  width: 1rem; height: 1rem; border-radius: 3px;
+  display: inline-block; vertical-align: middle;
+  border: 1px solid var(--border);
+  margin-right: 0.25rem;
+}
+
+/* --- Actions --- */
+.solver-actions-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin: 0.75rem 0 0.25rem;
+}
+.solver-actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  justify-content: center;
+  margin: 0;
+}
+
+.solver-btn {
+  padding: 0.5rem 1rem;
+  background: var(--accent);
+  color: white;
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  font-size: 0.95rem;
+  cursor: pointer;
+  transition: all 0.15s;
+  font-family: inherit;
+}
+
+.solver-btn:hover {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+}
+
+.solver-btn.secondary {
+  background: var(--surface-2);
+  color: var(--text);
+  border-color: var(--border);
+}
+
+.solver-btn.secondary:hover {
+  border-color: var(--accent);
+}
+
+.solver-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+/* --- Status line --- */
+.solver-status {
+  margin: 0.5rem 0 0;
+  font-size: 0.9rem;
+  color: var(--muted);
+  text-align: center;
+}
+
+.solver-status.ok  { color: var(--success); }
+.solver-status.err { color: var(--danger); }
+
+.size-controls {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  margin: 0.25rem 0 0.5rem;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+.size-controls .divider {
+  width: 1px; height: 1.2rem; background: var(--border); margin: 0 0.35rem;
+}
+.size-controls input[type="number"] {
+  width: 3rem;
+  padding: 0.25rem 0.4rem;
+  background: var(--surface-2);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-family: inherit;
+  font-size: 0.85rem;
+  text-align: center;
+}
+
+/* Thermometer overlay elements. Group-level opacity avoids the double-alpha
+   darkening where the stem passes under the bulb. */
+.thermo-svg { position: absolute; top: 0; left: 0; pointer-events: none; overflow: visible; }
+.thermo-svg .thermo-group        { opacity: 0.4; }
+.thermo-svg .thermo-group.active { opacity: 0.7; }
+.thermo-svg .bulb                { fill: var(--muted); }
+.thermo-svg .thermo-group.active .bulb { fill: var(--accent); }
+.thermo-svg .stem                { stroke: var(--muted); fill: none; }
+.thermo-svg .thermo-group.active .stem { stroke: var(--accent); }
+
+/* Whisper / region-sum / modular lines share this overlay. Each type has a
+   distinct color AND stroke pattern so they stay identifiable when they
+   cross. The small letter tag near the first cell reinforces the type. */
+.line-svg { position: absolute; top: 0; left: 0; pointer-events: none; overflow: visible; }
+.line-svg .line { fill: none; opacity: 0.65; }
+.line-svg .line.whisper    { stroke: #22c55e; }                        /* solid green */
+.line-svg .line.regionsum  { stroke: #38bdf8; stroke-dasharray: 8 4; } /* dashed blue */
+.line-svg .line.modular    { stroke: #c084fc; stroke-dasharray: 2 4; } /* dotted purple */
+.line-svg .line.renban     { stroke: #ec4899; }                        /* solid pink */
+.line-svg .line.palindrome { stroke: #94a3b8; }                        /* solid slate  */
+.line-svg .line.entropic   { stroke: #f97316; stroke-dasharray: 6 2 2 2; } /* dash-dot orange */
+.line-svg .line.parityline { stroke: #14b8a6; stroke-dasharray: 4 2 1 2; } /* dash-dot teal   */
+.line-svg .line.active     { opacity: 0.95; }
+.line-svg .line-tag {
+  font-family: "SF Mono", "Consolas", monospace;
+  font-weight: 700;
+  paint-order: stroke;
+  stroke: var(--surface);
+  stroke-width: 3;
+  stroke-linejoin: round;
+  dominant-baseline: hanging;
+}
+.line-svg .line-tag.whisper    { fill: #22c55e; }
+.line-svg .line-tag.regionsum  { fill: #38bdf8; }
+.line-svg .line-tag.modular    { fill: #c084fc; }
+.line-svg .line-tag.renban     { fill: #ec4899; }
+.line-svg .line-tag.palindrome { fill: #94a3b8; }
+.line-svg .line-tag.entropic   { fill: #f97316; }
+.line-svg .line-tag.parityline { fill: #14b8a6; }
+
+/* Arrow overlay: gray pill for the base cell(s), thin shaft with arrowhead. */
+.arrow-svg { position: absolute; top: 0; left: 0; pointer-events: none; overflow: visible; }
+.arrow-svg .arrow-group        { opacity: 0.7; }
+.arrow-svg .arrow-group.active { opacity: 0.95; }
+.arrow-svg .base {
+  fill: none;
+  stroke: var(--muted);
+  stroke-width: 1.4;
+}
+.arrow-svg .arrow-group.active .base { stroke: var(--accent); stroke-width: 1.6; }
+.arrow-svg .shaft {
+  stroke: var(--muted);
+  fill: none;
+}
+.arrow-svg .arrow-group.active .shaft { stroke: var(--accent); }
+.arrow-svg .head {
+  fill: var(--muted);
+  stroke: none;
+}
+.arrow-svg .arrow-group.active .head { fill: var(--accent); }
+
+/* Quadruples: circle at grid intersection with up to 4 required digits. */
+.quad-svg { position: absolute; top: 0; left: 0; pointer-events: none; overflow: visible; }
+.quad-svg .quad circle {
+  fill: var(--surface);
+  stroke: var(--muted);
+  stroke-width: 1.2;
+}
+.quad-svg .quad .digit {
+  fill: var(--text);
+  font-family: "SF Mono", "Consolas", monospace;
+  font-weight: 700;
+}
+
+/* Disable text selection over the grid so click-and-drag painting/tracing
+   doesn't get hijacked by the browser's native drag-to-select behavior. */
+.sudoku-grid, .sudoku-frame { user-select: none; -webkit-user-select: none; }
+
+/* Kropki dots.  Sit on the shared edge between adjacent cells. */
+.kropki-svg { position: absolute; top: 0; left: 0; pointer-events: none; overflow: visible; }
+.kropki-dot { stroke-width: 1.4; }
+.kropki-dot.white { fill: #ffffff; stroke: #111; }
+.kropki-dot.black { fill: #111;    stroke: #ffffff; }
+
+/* Kropki chip swatch inside the tool panel. */
+.kdot-swatch {
+  width: 0.85rem; height: 0.85rem; border-radius: 50%;
+  display: inline-block; vertical-align: middle;
+  margin-right: 0.3rem;
+}
+.kdot-swatch.w { background: #ffffff; border: 1.5px solid #111; }
+.kdot-swatch.b { background: #111;    border: 1.5px solid #ffffff; box-shadow: 0 0 0 1px var(--border); }
+
+/* Chip swatches for compare / XV / parity picker chips. */
+.cmp-swatch, .xv-swatch, .par-swatch {
+  display: inline-block; vertical-align: middle;
+  margin-right: 0.3rem;
+  color: var(--text);
+  font-weight: 700;
+  font-family: "SF Mono", "Consolas", monospace;
+}
+.cmp-swatch { width: 0.9rem; text-align: center; }
+.cmp-swatch.lt::before { content: '<'; }
+.cmp-swatch.gt::before { content: '>'; }
+.xv-swatch  { width: 0.9rem; text-align: center; }
+.xv-swatch.x::before { content: 'X'; }
+.xv-swatch.v::before { content: 'V'; }
+.par-swatch {
+  width: 0.85rem; height: 0.85rem;
+  background: transparent;
+  border: 1.5px solid var(--muted);
+}
+.par-swatch.odd  { border-radius: 50%; }
+.par-swatch.even { border-radius: 2px; }
+
+/* Compare marks: use accent color so they stand out against gray Kropki dots. */
+.compare-svg { position: absolute; top: 0; left: 0; pointer-events: none; overflow: visible; }
+.compare-svg .compare-mark polyline {
+  fill: none;
+  stroke: var(--accent);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  paint-order: stroke;
+}
+
+/* XV clues: bold monospace letters on the shared edge. */
+.xv-svg { position: absolute; top: 0; left: 0; pointer-events: none; overflow: visible; }
+.xv-svg .xv-mark {
+  font-family: "SF Mono", "Consolas", monospace;
+  font-weight: 800;
+  paint-order: stroke;
+  stroke: var(--surface);
+  stroke-width: 4;
+  stroke-linejoin: round;
+}
+.xv-svg .xv-mark.x { fill: #f97316; }   /* orange for X (sum 10) */
+.xv-svg .xv-mark.v { fill: #14b8a6; }   /* teal for V (sum 5) */
+
+/* Parity marks: shown as an inline-SVG background on the cell itself so the
+   glyph sits BEHIND the typed digit without needing any DOM restructuring. */
+.sudoku-cell.parity-odd {
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'><circle cx='20' cy='20' r='14' fill='%23888' opacity='0.28'/></svg>");
+  background-size: 82% 82%;
+  background-position: center;
+  background-repeat: no-repeat;
+}
+.sudoku-cell.parity-even {
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'><rect x='6' y='6' width='28' height='28' rx='2' ry='2' fill='%23888' opacity='0.28'/></svg>");
+  background-size: 82% 82%;
+  background-position: center;
+  background-repeat: no-repeat;
+}
+
+/* Cell outline when it's the first click of a pending Kropki pair. */
+.sudoku-cell.kropki-first {
+  outline: 2px dashed var(--accent);
+  outline-offset: -2px;
+  z-index: 2;
+}
+
+/* Sandwich edge cells. Visually distinct from skyscraper edges: solid tinted
+   background + solid border, so users can tell at a glance which constraint
+   the outer cells belong to. */
+.sudoku-frame .sandwich-cell {
+  width: var(--cell-size, 40px);
+  height: var(--cell-size, 40px);
+  padding: 0;
+  margin: 0;
+  background: color-mix(in oklab, var(--accent) 10%, var(--surface-2));
+  color: var(--muted);
+  text-align: center;
+  font-family: "SF Mono", "Consolas", monospace;
+  font-size: calc(var(--cell-size, 40px) * 0.36);
+  border: 1px solid var(--accent);
+  border-radius: 3px;
+  caret-color: transparent;
+}
+.sudoku-frame .sandwich-cell::selection { background: transparent; }
+.sudoku-frame .sandwich-cell:focus {
+  outline: none;
+  background: var(--surface);
+  color: var(--text);
+}
+.sudoku-frame .sandwich-cell.filled { color: var(--accent); font-weight: 700; }
+
+/* Placeholder rendered as the current auto-solved candidate. */
+.sudoku-cell.hint-only { color: var(--muted); font-weight: 400; }
+
+/* Toggle row for global rule flags */
+.flag-row {
+  display: flex; flex-wrap: wrap; justify-content: center;
+  gap: 0.4rem; margin: 0.35rem 0 0.15rem;
+}
+.flag-chip {
+  padding: 0.3rem 0.65rem;
+  background: var(--surface-2);
+  color: var(--muted);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  font-size: 0.82rem;
+  cursor: pointer;
+  font-family: inherit;
+}
+.flag-chip:hover { color: var(--text); border-color: var(--accent); }
+.flag-chip.active { background: var(--accent); color: white; border-color: var(--accent); }

@@ -1,0 +1,2345 @@
+/*
+ * sudoku.js — UI for variant sudoku.
+ *
+ * Manages the puzzle state defined by SudokuCore and lets the user edit:
+ *   - Grid size (any A×B box shape, 4 ≤ N ≤ 16)
+ *   - Digits (given clues)
+ *   - Jigsaw regions (paint tool)
+ *   - Killer cages (multi-select + sum)
+ *   - Thermometers (path tool)
+ *   - Skyscraper edge clues
+ *   - Rule toggles: diagonal, anti-knight, anti-king, anti-consecutive
+ *
+ * Everything lives inside `SudokuApp`; app.js just calls `render(container)`.
+ */
+window.SudokuApp = (function () {
+  const Core = window.SudokuCore;
+  const { MIN_N, MAX_N, digitToChar, charToDigit, isDigitKey } = Core;
+
+  const PRESETS = [
+    { N: 4,  boxR: 2, boxC: 2, label: '4×4'   },
+    { N: 6,  boxR: 2, boxC: 3, label: '6×6'   },
+    { N: 8,  boxR: 2, boxC: 4, label: '8×8'   },
+    { N: 9,  boxR: 3, boxC: 3, label: '9×9'   },
+    { N: 12, boxR: 3, boxC: 4, label: '12×12' },
+    { N: 16, boxR: 4, boxC: 4, label: '16×16' },
+  ];
+
+  /* Region palette — muted HSL steps meant as a drawing aid; both themes
+     stay close to the surface color so the tint doesn't compete with cell
+     content when regions are being edited. */
+  const REGION_HUES = [
+    210, 30, 140, 300, 260, 45, 190, 0,
+    170, 105, 330, 15, 240, 60, 285, 155,
+  ];
+  function regionColor(idx, theme) {
+    const h = REGION_HUES[idx % REGION_HUES.length];
+    return theme === 'light'
+      ? `hsl(${h}, 65%, 92%)`
+      : `hsl(${h}, 45%, 22%)`;
+  }
+
+  /* Spectradoku palette — vivid, named colors that survive in both themes.
+     The first nine slots follow the user-specified mapping
+       1-red 2-orange 3-yellow 4-green 5-cyan 6-blue 7-purple 8-gray 9-black
+     and slots 10..16 extend the palette for larger grids. Digits rendered
+     over these cells get a white outline (see styles.css) so they read
+     clearly against every hue, including yellow and black. */
+  const SPECTRA_PALETTE = [
+    '#e53935',  /*  1 red     */
+    '#fb8c00',  /*  2 orange  */
+    '#fdd835',  /*  3 yellow  */
+    '#43a047',  /*  4 green   */
+    '#00acc1',  /*  5 cyan    */
+    '#1e88e5',  /*  6 blue    */
+    '#8e24aa',  /*  7 purple  */
+    '#9e9e9e',  /*  8 gray    */
+    '#212121',  /*  9 black   */
+    '#ec407a',  /* 10 pink    */
+    '#00897b',  /* 11 teal    */
+    '#6d4c41',  /* 12 brown   */
+    '#c0ca33',  /* 13 lime    */
+    '#3949ab',  /* 14 indigo  */
+    '#00838f',  /* 15 dark cyan */
+    '#5d4037',  /* 16 dark brown */
+  ];
+  function spectraColor(idx) {
+    return SPECTRA_PALETTE[idx % SPECTRA_PALETTE.length];
+  }
+
+  const NAME = { en: 'Variant Sudoku Solver', zh: '变体数独求解器' };
+  const DESCRIPTION = {
+    en: 'Choose a size and box shape, add optional constraints (regions, Spectradoku colors, cages, thermos, skyscrapers, sandwich, German whisper / region-sum / modular lines, Kropki dots, X, anti-knight/king), then type given digits. Empty cells show a solution.',
+    zh: '选择网格尺寸与宫格形状，添加可选约束（异形宫、光谱数独、杀手框、温度计、摩天楼、三明治、德国耳语线/区域和线/模 3 线、黑白点、对角、反马步/反王步等），再输入已知数字。空格自动显示一种解。',
+  };
+
+  const T = {
+    tab: {
+      digit:     { en: 'Digits',       zh: '数字' },
+      region:    { en: 'Regions',      zh: '宫格' },
+      rainbow:   { en: 'Spectradoku',  zh: '光谱数独' },
+      cage:      { en: 'Cages',        zh: '杀手框' },
+      thermo:    { en: 'Thermo',       zh: '温度计' },
+      sky:       { en: 'Skyscraper',   zh: '摩天楼' },
+      sandwich:  { en: 'Sandwich',     zh: '三明治' },
+      whisper:   { en: 'Whisper',      zh: '德国耳语线' },
+      regionSum: { en: 'Region Sum',   zh: '区域和线' },
+      modular:   { en: 'Modular',      zh: '模 3 线' },
+      renban:    { en: 'Renban',       zh: '连线' },
+      palindrome:{ en: 'Palindrome',   zh: '回文线' },
+      entropic:  { en: 'Entropic',     zh: '熵线' },
+      parityLine:{ en: 'Parity Line',  zh: '奇偶线' },
+      arrow:     { en: 'Arrow',        zh: '箭头' },
+      quadruple: { en: 'Quadruple',    zh: '四方组' },
+      kropki:    { en: 'Kropki',       zh: '黑白点' },
+      compare:   { en: 'Compare',      zh: '大小符' },
+      xv:        { en: 'XV',           zh: 'XV' },
+      parity:    { en: 'Odd/Even',     zh: '奇偶' },
+    },
+    flag: {
+      diagonal:        { en: 'X (diagonals)',     zh: 'X（对角）' },
+      antiKnight:      { en: 'Anti-Knight',       zh: '反马步' },
+      antiKing:        { en: 'Anti-King',         zh: '反王步' },
+      antiConsecutive: { en: 'Anti-Consecutive',  zh: '反邻数' },
+    },
+    hint: {
+      digit:  { en: 'Type 1..9 / A..G to place a given. Backspace clears.',
+                zh: '输入 1..9 / A..G 填入已知数字，Backspace 清除。' },
+      region: { en: 'Pick a region color, then click or drag across cells to paint. Each region needs exactly N cells.',
+                zh: '选择一种颜色后点击或拖动格子上色。每个宫格必须包含 N 个单元格。' },
+      rainbow:{ en: 'Spectradoku: pick a color, then click or drag to color cells. Each row/column/box must contain all N colors, and each digit must appear once in every color.',
+                zh: '光谱数独：选择一种颜色后点击或拖动格子上色。每行/列/宫必须包含全部 N 种颜色，且每个数字在 N 种颜色中各出现一次。' },
+      cage:   { en: 'Click-drag to paint cells into the current cage (drag on selected cells to remove them). Click any finalized cage to edit its shape and sum. Enter a sum, then "Finish cage" to lock it.',
+                zh: '按住并拖动可将格子加入当前杀手框（在已选格上拖动可移除）。点击已完成的杀手框即可修改其形状与总和。输入总和后按"完成杀手框"锁定。' },
+      thermo: { en: 'Click or drag along cells in order (orthogonal or diagonal) — the first cell is the bulb. Values must strictly increase along the path. "Finish thermo" to start a new one.',
+                zh: '按顺序点击或拖动格子（正交或对角相邻），首格为温度计球端，数值沿路径严格递增。按"完成温度计"开始新一根。' },
+      sky:    { en: 'Type a visible-skyscraper count 1..N into any outer edge cell. Blank clears.',
+                zh: '在任意外圈格中输入 1..N 的摩天楼可见数，留空清除。' },
+      sandwich: { en: 'Type the sum of digits strictly between 1 and N in that row/column. Blank clears.',
+                  zh: '在外圈格中输入该行/列 1 与 N 之间数字的和，留空清除。' },
+      whisper:  { en: 'Click or drag along adjacent cells (orthogonal or diagonal). On the green line, neighbours must differ by ≥ ⌈N/2⌉.',
+                  zh: '点击或拖动相邻格（正交或对角）。绿线上相邻两格的差必须 ≥ ⌈N/2⌉。' },
+      regionSum:{ en: 'Click or drag along adjacent cells (orthogonal or diagonal). The blue line’s portion inside each region must share one sum.',
+                  zh: '点击或拖动相邻格（正交或对角）。蓝线在每个宫格内的分段和必须相等。' },
+      modular:  { en: 'Click or drag along adjacent cells (orthogonal or diagonal). Any 3 consecutive cells on the purple line must cover residues {0,1,2} mod 3.',
+                  zh: '点击或拖动相邻格（正交或对角）。紫线上任意 3 个连续格的余数必须覆盖 {0,1,2} (mod 3)。' },
+      renban:   { en: 'Click or drag along adjacent cells. The digits on a renban line form a set of consecutive numbers in any order, no repeats.',
+                  zh: '点击或拖动相邻格。连线上的数字为若干连续数（任意顺序，不重复）。' },
+      palindrome: { en: 'Click or drag along adjacent cells. Digits on a palindrome read the same forwards and backwards.',
+                    zh: '点击或拖动相邻格。回文线上的数字正读反读相同。' },
+      entropic: { en: 'Click or drag along adjacent cells. Every 3 consecutive cells must include one digit from Low, Mid, and High thirds (e.g. 1-3 / 4-6 / 7-9).',
+                  zh: '点击或拖动相邻格。任意连续 3 格必须包含低、中、高三段各一个数字（例如 1-3 / 4-6 / 7-9）。' },
+      parityLine:{ en: 'Click or drag along adjacent cells. Consecutive cells alternate odd / even.',
+                   zh: '点击或拖动相邻格。相邻格的奇偶性交替。' },
+      arrow:    { en: 'Two phases: paint the base (pill of 1-3 orthogonally-adjacent cells) then "Next: shaft" and paint the shaft cells. Shaft digits sum to the multi-digit number on the base. "Finish arrow" to lock.',
+                  zh: '两步：先绘制圆圈（1-3 个正交相邻的格子组成的胶囊），然后按"下一步：箭杆"绘制箭杆。箭杆数字之和等于圆圈上读出的数。按"完成箭头"锁定。' },
+      quadruple:{ en: 'Type up to 4 required digits, then click a cell — the mark is placed at the intersection whose top-left cell is the one you clicked. Each digit must appear in at least one of the 4 surrounding cells. Click again to clear.',
+                  zh: '在框中输入需要的 1-4 个数字，然后点击格子 — 标记会放在该格右下方的交点，四个相邻格中至少有一个含该数字。再次点击相同交点可清除。' },
+      kropki:   { en: 'Pick a dot type, then click two orthogonally-adjacent cells to toggle a dot between them. White = consecutive, black = ratio 2.',
+                  zh: '选择黑/白点，然后点击两个正交相邻的格子在其边上放置/移除点。白点为相邻数，黑点为倍数关系。' },
+      compare:  { en: 'Pick "<" or ">", then click two orthogonally-adjacent cells in order. The mark on the shared edge points at the smaller cell.',
+                  zh: '选择"<"或">"，然后按顺序点击两个正交相邻格；共享边上的符号开口朝向较大的格。' },
+      xv:       { en: 'Pick X (sum 10) or V (sum 5), then click two orthogonally-adjacent cells to toggle the mark on their shared edge.',
+                  zh: '选择 X（和为 10）或 V（和为 5），然后点击两个正交相邻的格子在其边上放置/移除标记。' },
+      parity:   { en: 'Pick Odd (circle) or Even (square), then click or drag across cells to mark them. Click a marked cell with the same tool to clear.',
+                  zh: '选择"奇"（圆圈）或"偶"（方块），然后点击或拖动格子标记；对已相同标记的格再次点击可清除。' },
+    },
+    solve:   { en: 'Solve',           zh: '求解' },
+    prev:    { en: '◀ Previous',      zh: '◀ 上一解' },
+    next:    { en: 'Next ▶',          zh: '下一解 ▶' },
+    reset:   { en: 'Clear digits',    zh: '清空数字' },
+    example: { en: 'Load example',    zh: '载入示例' },
+    wipe:    { en: 'Clear all',       zh: '全部清除' },
+    live:    { en: 'Live solve',      zh: '实时求解' },
+    boxRLbl: { en: 'Box rows',        zh: '宫格行数' },
+    boxCLbl: { en: 'Box cols',        zh: '宫格列数' },
+    newCage: { en: 'Finish cage',     zh: '完成杀手框' },
+    newTh:   { en: 'Finish thermo',   zh: '完成温度计' },
+    delSel:  { en: 'Delete last',     zh: '删除最后' },
+    sumLbl:  { en: 'Sum',             zh: '总和' },
+    regLbl:  { en: 'Region',          zh: '宫格 ID' },
+    finishLine: { en: 'Finish line',  zh: '完成线' },
+    delLine:    { en: 'Delete last line', zh: '删除上一条线' },
+    dotWhite:   { en: 'White dot',    zh: '白点' },
+    dotBlack:   { en: 'Black dot',    zh: '黑点' },
+    clearDots:  { en: 'Clear all dots', zh: '清空所有点' },
+    cmpLt:      { en: '< (a < b)',    zh: '< （a < b）' },
+    cmpGt:      { en: '> (a > b)',    zh: '> （a > b）' },
+    clearCmp:   { en: 'Clear all compare', zh: '清空所有大小符' },
+    xvX:        { en: 'X (sum 10)',   zh: 'X（和 10）' },
+    xvV:        { en: 'V (sum 5)',    zh: 'V（和 5）' },
+    clearXV:    { en: 'Clear all XV', zh: '清空所有 XV' },
+    parOdd:     { en: 'Odd (○)',      zh: '奇（○）' },
+    parEven:    { en: 'Even (□)',     zh: '偶（□）' },
+    clearParity:{ en: 'Clear all parity', zh: '清空所有奇偶标记' },
+  };
+
+  /* Which puzzle field each line-based tool uses. */
+  const LINE_FIELD = {
+    whisper:    'whispers',
+    regionSum:  'regionSums',
+    modular:    'modulars',
+    renban:     'renbans',
+    palindrome: 'palindromes',
+    entropic:   'entropics',
+    parityLine: 'parityLines',
+  };
+  /* Tool ids that share the generic line-draft workflow (Finish / Delete-last
+     buttons, click-or-drag paint via addLineCellLight). */
+  const LINE_TOOLS = new Set(Object.keys(LINE_FIELD));
+
+  const EXAMPLES = {
+    9: [
+      5,3,0, 0,7,0, 0,0,0,
+      6,0,0, 1,9,5, 0,0,0,
+      0,9,8, 0,0,0, 0,6,0,
+      8,0,0, 0,6,0, 0,0,3,
+      4,0,0, 8,0,3, 0,0,1,
+      7,0,0, 0,2,0, 0,0,6,
+      0,6,0, 0,0,0, 2,8,0,
+      0,0,0, 4,1,9, 0,0,5,
+      0,0,0, 0,8,0, 0,7,9,
+    ],
+    4: [1,0,0,4, 0,0,2,0, 0,3,0,0, 2,0,0,3],
+    6: [1,0,0,0,0,6, 0,5,0,1,0,0, 0,0,4,0,0,1, 5,0,0,0,0,4, 0,0,5,6,0,0, 6,0,0,0,0,5],
+  };
+
+  /* Module state — one live puzzle at a time. */
+  let state;
+
+  function makeState(container) {
+    return {
+      container,
+      puzzle: Core.newPuzzle(9, 3, 3),
+      tool: 'digit',
+      /* Tool-specific transient selection: */
+      regionPick: 0,     /* current region id when painting */
+      rainbowPick: 1,    /* current rainbow color (1..N) when painting */
+      rainbowDrag: false,
+      cageDraft: { cells: [], sum: '' },
+      thermoDraft: { cells: [] },
+      /* Generic line draft used by whisper / region-sum / modular /
+         renban / palindrome / entropic / parityLine tools. */
+      lineDraft: { cells: [] },
+      /* Arrow tool has two phases: 0 = drawing base pill; 1 = drawing shaft. */
+      arrowDraft: { phase: 0, base: [], path: [] },
+      /* Quadruple tool: digits pending assignment, next click drops the mark. */
+      quadDraft: { digits: '' },
+      /* Kropki: current dot type + partial pair. */
+      kropkiKind: 'w',
+      kropkiFirst: -1,
+      /* Compare / XV edge marks — same two-click pattern. */
+      compareKind: 'lt',
+      compareFirst: -1,
+      xvKind: 'x',
+      xvFirst: -1,
+      /* Parity brush: 1 = odd, 2 = even. */
+      parityKind: 1,
+      parityDrag: false,
+      regionDrag: false,
+      pathDrag: false,
+      /* Drag state for cage painting. */
+      cageDrag: null,    /* null | { mode: 'add' | 'remove' } */
+      hoverCageIdx: -1,
+      /* Solve state: */
+      liveSolve: true,
+      solutions: [],
+      solutionIdx: 0,
+      reachedCap: false,
+      /* DOM handles filled by render(): */
+      dom: {},
+    };
+  }
+
+  /* ---------- Small DOM helpers ---------- */
+  function el(tag, cls, txt) {
+    const n = document.createElement(tag);
+    if (cls) n.className = cls;
+    if (txt != null) n.textContent = txt;
+    return n;
+  }
+  function btn(labelObj, opts = {}) {
+    const b = el('button', 'solver-btn' + (opts.secondary ? ' secondary' : ''));
+    b._label = labelObj;
+    b.textContent = L(labelObj);
+    if (opts.onClick) b.addEventListener('click', opts.onClick);
+    return b;
+  }
+  function relocalize(root) {
+    root.querySelectorAll('[data-lbl]').forEach(n => { n.textContent = L(T[n.dataset.lbl.split('.')[0]][n.dataset.lbl.split('.')[1]]); });
+    root.querySelectorAll('button').forEach(b => { if (b._label) b.textContent = L(b._label); });
+  }
+
+  /* ---------- Header controls: sizes + rule flags ---------- */
+  function buildSizeControls(host) {
+    const wrap = el('div', 'pill-picker');
+    const btns = {};
+    PRESETS.forEach(p => {
+      const b = el('button', 'pill-btn', p.label);
+      b.type = 'button';
+      b.addEventListener('click', () => {
+        state.puzzle = Core.newPuzzle(p.N, p.boxR, p.boxC);
+        state.cageDraft = { cells: [], sum: '' };
+        state.thermoDraft = { cells: [] };
+        state.lineDraft = { cells: [] };
+        state.arrowDraft = { phase: 0, base: [], path: [] };
+        state.quadDraft = { digits: '' };
+        state.kropkiFirst = -1;
+        state.compareFirst = -1;
+        state.xvFirst = -1;
+        state.rainbowPick = 1;
+        rebuild();
+      });
+      btns[p.label] = b;
+      wrap.appendChild(b);
+    });
+    host.appendChild(wrap);
+
+    const custom = el('div', 'size-controls');
+    custom.append(
+      el('span', null, 'Custom: '),
+    );
+    const boxR = el('input');
+    boxR.type = 'number'; boxR.min = 1; boxR.max = 4; boxR.value = state.puzzle.boxR;
+    const boxC = el('input');
+    boxC.type = 'number'; boxC.min = 1; boxC.max = 4; boxC.value = state.puzzle.boxC;
+    const info = el('span', 'hint');
+    function refreshInfo() {
+      const A = Number(boxR.value) | 0, B = Number(boxC.value) | 0;
+      const N = A * B;
+      info.textContent = (N >= MIN_N && N <= MAX_N)
+        ? `→ ${N}×${N}`
+        : `→ ${N}× (must be ${MIN_N}..${MAX_N})`;
+    }
+    boxR.addEventListener('input', refreshInfo);
+    boxC.addEventListener('input', refreshInfo);
+    const apply = btn({ en: 'Apply', zh: '应用' }, {
+      secondary: true,
+      onClick: () => {
+        const A = Number(boxR.value) | 0, B = Number(boxC.value) | 0;
+        const N = A * B;
+        if (N < MIN_N || N > MAX_N) return;
+        state.puzzle = Core.newPuzzle(N, A, B);
+        state.cageDraft = { cells: [], sum: '' };
+        state.thermoDraft = { cells: [] };
+        state.lineDraft = { cells: [] };
+        state.arrowDraft = { phase: 0, base: [], path: [] };
+        state.quadDraft = { digits: '' };
+        state.kropkiFirst = -1;
+        state.compareFirst = -1;
+        state.xvFirst = -1;
+        state.rainbowPick = 1;
+        rebuild();
+      },
+    });
+    custom.append(
+      el('span', null, 'A='), boxR,
+      el('span', null, '× B='), boxC,
+      info, apply,
+    );
+    host.appendChild(custom);
+    refreshInfo();
+
+    /* Highlight the matching preset. */
+    PRESETS.forEach(p => {
+      const active = (p.N === state.puzzle.N && p.boxR === state.puzzle.boxR && p.boxC === state.puzzle.boxC);
+      btns[p.label].classList.toggle('active', active);
+    });
+  }
+
+  function buildFlagRow(host) {
+    const row = el('div', 'flag-row');
+    Object.keys(T.flag).forEach(k => {
+      const chip = el('button', 'flag-chip');
+      chip._label = T.flag[k];
+      chip.textContent = L(T.flag[k]);
+      chip.classList.toggle('active', !!state.puzzle.flags[k]);
+      chip.addEventListener('click', () => {
+        state.puzzle.flags[k] = !state.puzzle.flags[k];
+        chip.classList.toggle('active', state.puzzle.flags[k]);
+        analyze();
+      });
+      row.appendChild(chip);
+    });
+    host.appendChild(row);
+  }
+
+  /* Tool tabs are grouped by category so related tools sit on the same row.
+     Each group renders as its own centered pill row inside `.tool-tabs-wrap`. */
+  const TOOL_GROUPS = [
+    { label: { en: 'Basic',      zh: '基础'   }, tools: ['digit', 'region', 'rainbow', 'cage'] },
+    { label: { en: 'Lines',      zh: '线约束' }, tools: ['thermo', 'whisper', 'regionSum', 'modular', 'renban', 'palindrome', 'entropic', 'parityLine'] },
+    { label: { en: 'Arrows',     zh: '箭头'   }, tools: ['arrow'] },
+    { label: { en: 'Edge clues', zh: '外圈线索' }, tools: ['sky', 'sandwich'] },
+    { label: { en: 'Edge marks', zh: '边标记' }, tools: ['kropki', 'compare', 'xv'] },
+    { label: { en: 'Point marks',zh: '点标记' }, tools: ['quadruple'] },
+    { label: { en: 'Cell marks', zh: '格子标记' }, tools: ['parity'] },
+  ];
+
+  function buildToolTabs(host) {
+    const wrap = el('div', 'tool-tabs-wrap');
+    state.dom.tabs = {};
+    TOOL_GROUPS.forEach(group => {
+      const row = el('div', 'tool-tabs');
+      const lbl = el('span', 'tab-group-label');
+      lbl._label = group.label;
+      lbl.textContent = L(group.label);
+      row.appendChild(lbl);
+      group.tools.forEach(k => {
+        const b = el('button', 'tool-tab');
+        b._label = T.tab[k];
+        b.textContent = L(T.tab[k]);
+        b.classList.toggle('active', state.tool === k);
+        b.addEventListener('click', () => {
+          state.tool = k;
+          rebuildToolUI();
+        });
+        row.appendChild(b);
+        state.dom.tabs[k] = b;
+      });
+      wrap.appendChild(row);
+    });
+    host.appendChild(wrap);
+  }
+
+  function buildToolPanel(host) {
+    const panel = el('div', 'tool-panel');
+    state.dom.toolPanel = panel;
+    host.appendChild(panel);
+    fillToolPanel();
+  }
+
+  function fillToolPanel() {
+    const p = state.dom.toolPanel;
+    p.innerHTML = '';
+    const hint = el('div', 'hint', L(T.hint[state.tool]));
+    hint.style.flex = '1 1 100%';
+    hint.style.textAlign = 'center';
+    p.appendChild(hint);
+
+    if (state.tool === 'region')    fillRegionPanel(p);
+    if (state.tool === 'rainbow')   fillRainbowPanel(p);
+    if (state.tool === 'cage')      fillCagePanel(p);
+    if (state.tool === 'thermo')    fillThermoPanel(p);
+    if (state.tool === 'sky')       fillSkyPanel(p);
+    if (state.tool === 'sandwich')  fillSandwichPanel(p);
+    if (LINE_TOOLS.has(state.tool)) fillLinePanel(p);
+    if (state.tool === 'arrow')     fillArrowPanel(p);
+    if (state.tool === 'quadruple') fillQuadruplePanel(p);
+    if (state.tool === 'kropki')    fillKropkiPanel(p);
+    if (state.tool === 'compare')   fillComparePanel(p);
+    if (state.tool === 'xv')        fillXVPanel(p);
+    if (state.tool === 'parity')    fillParityPanel(p);
+  }
+
+  /* Shared: a chip button with a swatch element for pair/parity pickers. */
+  function chipButton(active, swatchCls, label, onClick) {
+    const chip = el('button', 'chip' + (active ? ' active' : ''));
+    chip._label = label;
+    if (swatchCls) {
+      const sw = el('span', swatchCls);
+      chip.appendChild(sw);
+    }
+    chip.appendChild(document.createTextNode(L(label)));
+    chip.addEventListener('click', onClick);
+    return chip;
+  }
+
+  function fillComparePanel(p) {
+    [
+      { kind: 'lt', label: T.cmpLt, sw: 'cmp-swatch lt' },
+      { kind: 'gt', label: T.cmpGt, sw: 'cmp-swatch gt' },
+    ].forEach(({ kind, label, sw }) => {
+      p.appendChild(chipButton(state.compareKind === kind, sw, label, () => {
+        state.compareKind = kind;
+        state.compareFirst = -1;
+        fillToolPanel();
+        drawCompare();
+      }));
+    });
+    p.appendChild(el('span', null,
+      L({ en: `Marks: ${state.puzzle.compare.length}`, zh: `标记数：${state.puzzle.compare.length}` })));
+    if (state.puzzle.compare.length) {
+      p.appendChild(btn(T.clearCmp, {
+        secondary: true,
+        onClick: () => { state.puzzle.compare = []; rebuild(); },
+      }));
+    }
+  }
+
+  function fillXVPanel(p) {
+    [
+      { kind: 'x', label: T.xvX, sw: 'xv-swatch x' },
+      { kind: 'v', label: T.xvV, sw: 'xv-swatch v' },
+    ].forEach(({ kind, label, sw }) => {
+      p.appendChild(chipButton(state.xvKind === kind, sw, label, () => {
+        state.xvKind = kind;
+        state.xvFirst = -1;
+        fillToolPanel();
+        drawXV();
+      }));
+    });
+    p.appendChild(el('span', null,
+      L({ en: `Marks: ${state.puzzle.xv.length}`, zh: `标记数：${state.puzzle.xv.length}` })));
+    if (state.puzzle.xv.length) {
+      p.appendChild(btn(T.clearXV, {
+        secondary: true,
+        onClick: () => { state.puzzle.xv = []; rebuild(); },
+      }));
+    }
+  }
+
+  function fillParityPanel(p) {
+    [
+      { kind: 1, label: T.parOdd,  sw: 'par-swatch odd'  },
+      { kind: 2, label: T.parEven, sw: 'par-swatch even' },
+    ].forEach(({ kind, label, sw }) => {
+      p.appendChild(chipButton(state.parityKind === kind, sw, label, () => {
+        state.parityKind = kind;
+        fillToolPanel();
+      }));
+    });
+    const total = state.puzzle.parity.reduce((n, v) => n + (v ? 1 : 0), 0);
+    p.appendChild(el('span', null,
+      L({ en: `Marks: ${total}`, zh: `标记数：${total}` })));
+    if (total) {
+      p.appendChild(btn(T.clearParity, {
+        secondary: true,
+        onClick: () => { state.puzzle.parity.fill(0); rebuild(); },
+      }));
+    }
+  }
+
+  function fillSandwichPanel(p) {
+    const sw = state.puzzle.sandwich;
+    const total = ['top', 'bottom', 'left', 'right']
+      .reduce((n, side) => n + Array.prototype.filter.call(sw[side], v => !!v).length, 0);
+    p.appendChild(el('span', null,
+      L({ en: `Clues set: ${total}`, zh: `已设线索：${total}` })));
+    p.appendChild(btn({ en: 'Clear all clues', zh: '清空全部线索' }, {
+      secondary: true,
+      onClick: () => {
+        sw.top.fill(0); sw.bottom.fill(0); sw.left.fill(0); sw.right.fill(0);
+        rebuild();
+      },
+    }));
+  }
+
+  function fillLinePanel(p) {
+    const draft = state.lineDraft;
+    const field = LINE_FIELD[state.tool];
+    p.appendChild(el('span', null,
+      L({ en: `Path length: ${draft.cells.length}`,
+          zh: `路径长度：${draft.cells.length}` })));
+    p.appendChild(btn(T.finishLine, { onClick: finishLine }));
+    p.appendChild(btn(T.delSel, {
+      secondary: true,
+      onClick: () => { draft.cells.pop(); rebuild(); },
+    }));
+    const existing = (state.puzzle[field] || []).length;
+    if (existing) {
+      p.appendChild(btn(T.delLine, {
+        secondary: true,
+        onClick: () => { state.puzzle[field].pop(); rebuild(); },
+      }));
+    }
+  }
+
+  function fillKropkiPanel(p) {
+    const kinds = [
+      { kind: 'w', label: T.dotWhite },
+      { kind: 'b', label: T.dotBlack },
+    ];
+    kinds.forEach(({ kind, label }) => {
+      const chip = el('button', 'chip');
+      chip._label = label;
+      const sw = el('span', 'kdot-swatch ' + (kind === 'w' ? 'w' : 'b'));
+      chip.appendChild(sw);
+      chip.appendChild(document.createTextNode(L(label)));
+      chip.classList.toggle('active', state.kropkiKind === kind);
+      chip.addEventListener('click', () => {
+        state.kropkiKind = kind;
+        state.kropkiFirst = -1;
+        fillToolPanel();
+        drawKropki();
+      });
+      p.appendChild(chip);
+    });
+    p.appendChild(el('span', null,
+      L({ en: `Dots: ${state.puzzle.kropki.length}`,
+          zh: `点数：${state.puzzle.kropki.length}` })));
+    if (state.puzzle.kropki.length) {
+      p.appendChild(btn(T.clearDots, {
+        secondary: true,
+        onClick: () => { state.puzzle.kropki = []; rebuild(); },
+      }));
+    }
+  }
+
+  function finishLine() {
+    const field = LINE_FIELD[state.tool];
+    if (!field) return;
+    if (state.lineDraft.cells.length < 2) return;
+    state.puzzle[field].push([...state.lineDraft.cells]);
+    state.lineDraft = { cells: [] };
+    rebuild();
+  }
+
+  function fillArrowPanel(p) {
+    const draft = state.arrowDraft;
+    p.appendChild(el('span', null,
+      L({ en: `Phase: ${draft.phase === 0 ? 'Base pill' : 'Shaft'} — base=${draft.base.length}, shaft=${draft.path.length}`,
+          zh: `阶段：${draft.phase === 0 ? '圆圈胶囊' : '箭杆'} — 圆圈=${draft.base.length}，箭杆=${draft.path.length}` })));
+    if (draft.phase === 0) {
+      p.appendChild(btn({ en: 'Next: shaft', zh: '下一步：箭杆' }, {
+        onClick: () => {
+          if (!draft.base.length) return;
+          draft.phase = 1;
+          rebuild();
+        },
+      }));
+    } else {
+      p.appendChild(btn({ en: 'Back: base', zh: '返回：圆圈' }, {
+        secondary: true,
+        onClick: () => { draft.phase = 0; rebuild(); },
+      }));
+      p.appendChild(btn({ en: 'Finish arrow', zh: '完成箭头' }, { onClick: finishArrow }));
+    }
+    p.appendChild(btn({ en: 'Cancel', zh: '取消' }, {
+      secondary: true,
+      onClick: () => { state.arrowDraft = { phase: 0, base: [], path: [] }; rebuild(); },
+    }));
+    if (state.puzzle.arrows.length) {
+      p.appendChild(btn({ en: 'Delete last arrow', zh: '删除上一箭头' }, {
+        secondary: true,
+        onClick: () => { state.puzzle.arrows.pop(); rebuild(); },
+      }));
+    }
+  }
+
+  function finishArrow() {
+    const d = state.arrowDraft;
+    if (!d.base.length || !d.path.length) return;
+    state.puzzle.arrows.push({ base: [...d.base], path: [...d.path] });
+    state.arrowDraft = { phase: 0, base: [], path: [] };
+    rebuild();
+  }
+
+  /* Arrow painting: append a cell to whichever phase the draft is in.
+     Base cells must be orthogonally adjacent (they form a pill). Shaft
+     cells may step orthogonally or diagonally (like other lines). */
+  function addArrowCell(i) { addArrowCellLight(i); }
+  function addArrowCellLight(i) {
+    const N = state.puzzle.N;
+    const d = state.arrowDraft;
+    const arr = d.phase === 0 ? d.base : d.path;
+    if (arr.length === 0) { arr.push(i); refreshPathOverlays(); return; }
+    if (arr[arr.length - 1] === i) return;
+    if (arr.indexOf(i) !== -1) return;
+    /* Base and path may not overlap. */
+    if (d.phase === 0 && d.path.indexOf(i) !== -1) return;
+    if (d.phase === 1 && d.base.indexOf(i) !== -1) return;
+    const prev = arr[arr.length - 1];
+    const dr = Math.abs(((i / N) | 0) - ((prev / N) | 0));
+    const dc = Math.abs((i % N) - (prev % N));
+    if (d.phase === 0) {
+      /* Base pill: orthogonal only, max 3 cells so it stays a short number. */
+      if (dr + dc === 1 && arr.length < 3) { arr.push(i); refreshPathOverlays(); }
+    } else {
+      if (dr <= 1 && dc <= 1 && (dr + dc) > 0) { arr.push(i); refreshPathOverlays(); }
+    }
+  }
+
+  function fillQuadruplePanel(p) {
+    const draft = state.quadDraft;
+    p.appendChild(el('span', null, L({ en: 'Digits', zh: '数字' }) + ':'));
+    const input = el('input');
+    input.type = 'text';
+    input.value = draft.digits;
+    input.placeholder = 'e.g. 1234';
+    input.maxLength = state.puzzle.N;
+    input.addEventListener('input', () => { draft.digits = input.value; });
+    p.appendChild(input);
+    p.appendChild(el('span', null,
+      L({ en: `Placed: ${state.puzzle.quadruples.length}`,
+          zh: `已放置：${state.puzzle.quadruples.length}` })));
+    if (state.puzzle.quadruples.length) {
+      p.appendChild(btn({ en: 'Delete last', zh: '删除最后一个' }, {
+        secondary: true,
+        onClick: () => { state.puzzle.quadruples.pop(); rebuild(); },
+      }));
+      p.appendChild(btn({ en: 'Clear all', zh: '清空全部' }, {
+        secondary: true,
+        onClick: () => { state.puzzle.quadruples = []; rebuild(); },
+      }));
+    }
+  }
+
+  /* Quadruple click: the clicked cell becomes the top-left of the 2×2, so the
+     mark sits at the intersection (r+1, c+1). Clicking the same intersection
+     again clears it. Rejects placements at the grid's bottom or right edge. */
+  function handleQuadClick(i) {
+    const N = state.puzzle.N;
+    const r = (i / N) | 0, c = i % N;
+    /* The mark's corner is (r+1, c+1). Must be strictly inside the grid. */
+    const qr = r + 1, qc = c + 1;
+    if (qr <= 0 || qr >= N || qc <= 0 || qc >= N) return;
+    const digits = parseQuadDigits(state.quadDraft.digits, N);
+    if (!digits.length) return;
+    const list = state.puzzle.quadruples;
+    const found = list.findIndex(q => q.r === qr && q.c === qc);
+    if (found >= 0) {
+      /* Same corner: replace if digits differ, else remove. */
+      const cur = list[found];
+      if (arraysEqual(cur.digits, digits)) list.splice(found, 1);
+      else cur.digits = digits;
+    } else {
+      list.push({ r: qr, c: qc, digits });
+    }
+    rebuild();
+  }
+  function parseQuadDigits(s, N) {
+    const seen = new Set();
+    const out = [];
+    for (const ch of String(s || '').toUpperCase()) {
+      const v = charToDigit(ch);
+      if (v >= 1 && v <= N && !seen.has(v)) { seen.add(v); out.push(v); if (out.length >= 4) break; }
+    }
+    return out;
+  }
+  function arraysEqual(a, b) {
+    if (a.length !== b.length) return false;
+    for (let k = 0; k < a.length; k++) if (a[k] !== b[k]) return false;
+    return true;
+  }
+
+  function fillSkyPanel(p) {
+    const sky = state.puzzle.sky;
+    const total = ['top', 'bottom', 'left', 'right']
+      .reduce((n, side) => n + Array.prototype.filter.call(sky[side], v => !!v).length, 0);
+    p.appendChild(el('span', null,
+      L({ en: `Clues set: ${total}`, zh: `已设线索：${total}` })));
+    p.appendChild(btn({ en: 'Clear all clues', zh: '清空全部线索' }, {
+      secondary: true,
+      onClick: () => {
+        sky.top.fill(0); sky.bottom.fill(0); sky.left.fill(0); sky.right.fill(0);
+        rebuild();
+      },
+    }));
+  }
+
+  function fillRegionPanel(p) {
+    const N = state.puzzle.N;
+    const label = el('span', null, L(T.regLbl) + ':');
+    p.appendChild(label);
+    const theme = AppTheme.get();
+    /* Region chips 0..N-1, plus rebalance + reset-to-boxes buttons. */
+    for (let r = 0; r < N; r++) {
+      const chip = el('button', 'chip');
+      const sw = el('span', 'swatch'); sw.style.background = regionColor(r, theme);
+      chip.appendChild(sw);
+      chip.appendChild(document.createTextNode(String(r + 1)));
+      chip.classList.toggle('active', r === state.regionPick);
+      chip.addEventListener('click', () => {
+        state.regionPick = r;
+        fillToolPanel();
+      });
+      p.appendChild(chip);
+    }
+    const boxes = btn({ en: 'Reset to boxes', zh: '恢复为矩形宫' }, {
+      secondary: true,
+      onClick: () => {
+        state.puzzle.regions = Core.rectRegions(N, state.puzzle.boxR, state.puzzle.boxC);
+        rebuild();
+      },
+    });
+    p.appendChild(boxes);
+  }
+
+  function fillRainbowPanel(p) {
+    const N = state.puzzle.N;
+    const label = el('span', null, L({ en: 'Color', zh: '颜色' }) + ':');
+    p.appendChild(label);
+    for (let r = 1; r <= N; r++) {
+      const chip = el('button', 'chip');
+      const sw = el('span', 'swatch'); sw.style.background = spectraColor(r - 1);
+      chip.appendChild(sw);
+      chip.appendChild(document.createTextNode(String(r)));
+      chip.classList.toggle('active', r === state.rainbowPick);
+      chip.addEventListener('click', () => {
+        state.rainbowPick = r;
+        fillToolPanel();
+      });
+      p.appendChild(chip);
+    }
+    const total = Array.prototype.reduce.call(state.puzzle.rainbow, (n, v) => n + (v ? 1 : 0), 0);
+    p.appendChild(el('span', null,
+      L({ en: `Colored: ${total}`, zh: `已上色：${total}` })));
+    p.appendChild(btn({ en: 'Clear all colors', zh: '清空所有颜色' }, {
+      secondary: true,
+      onClick: () => { state.puzzle.rainbow.fill(0); rebuild(); },
+    }));
+  }
+
+  function fillCagePanel(p) {
+    const draft = state.cageDraft;
+    const info = el('span', null,
+      L({ en: `Selected: ${draft.cells.length} cells`,
+          zh: `已选：${draft.cells.length} 格` }));
+    p.appendChild(info);
+    p.appendChild(el('span', null, L(T.sumLbl) + ':'));
+    const sumIn = el('input');
+    sumIn.type = 'number'; sumIn.min = 1; sumIn.value = draft.sum;
+    sumIn.placeholder = '—';
+    sumIn.addEventListener('input', () => { draft.sum = sumIn.value; });
+    p.appendChild(sumIn);
+    p.appendChild(btn(T.newCage, { onClick: finishCage }));
+    p.appendChild(btn({ en: 'Cancel', zh: '取消' }, {
+      secondary: true,
+      onClick: () => { state.cageDraft = { cells: [], sum: '' }; rebuild(); },
+    }));
+    if (state.puzzle.cages.length) {
+      p.appendChild(btn({ en: 'Delete last cage', zh: '删除上一个杀手框' }, {
+        secondary: true,
+        onClick: () => { state.puzzle.cages.pop(); rebuild(); },
+      }));
+    }
+  }
+
+  function fillThermoPanel(p) {
+    const draft = state.thermoDraft;
+    p.appendChild(el('span', null,
+      L({ en: `Path length: ${draft.cells.length}`,
+          zh: `路径长度：${draft.cells.length}` })));
+    p.appendChild(btn(T.newTh, { onClick: finishThermo }));
+    p.appendChild(btn(T.delSel, {
+      secondary: true,
+      onClick: () => { draft.cells.pop(); rebuild(); },
+    }));
+    if (state.puzzle.thermos.length) {
+      p.appendChild(btn({ en: 'Delete last thermo', zh: '删除上一根' }, {
+        secondary: true,
+        onClick: () => { state.puzzle.thermos.pop(); rebuild(); },
+      }));
+    }
+  }
+
+  function finishCage() {
+    const draft = state.cageDraft;
+    if (!draft.cells.length) return;
+    const sum = draft.sum === '' ? null : Number(draft.sum);
+    if (sum != null && (!Number.isFinite(sum) || sum <= 0)) return;
+    state.puzzle.cages.push({ cells: [...draft.cells], sum });
+    state.cageDraft = { cells: [], sum: '' };
+    rebuild();
+  }
+  function finishThermo() {
+    if (state.thermoDraft.cells.length < 2) return;
+    state.puzzle.thermos.push([...state.thermoDraft.cells]);
+    state.thermoDraft = { cells: [] };
+    rebuild();
+  }
+
+  /* ---------- Grid + frame (with skyscraper edges) ---------- */
+  function cellSize(N) {
+    /* Shrink cells so 16×16 still fits comfortably. */
+    if (N <= 6)  return 46;
+    if (N <= 9)  return 40;
+    if (N <= 12) return 32;
+    return 26;
+  }
+
+  function buildGridFrame(host) {
+    const { N } = state.puzzle;
+    const size = cellSize(N);
+    const edgeMode = state.tool === 'sky' ? 'sky'
+                   : state.tool === 'sandwich' ? 'sandwich'
+                   : null;
+    const edge = edgeMode ? size : 0;
+    const makeEdge = (side, idx) =>
+      edgeMode === 'sandwich' ? makeSandwich(side, idx) : makeSky(side, idx);
+    const frame = el('div', 'sudoku-frame');
+    frame.style.setProperty('--cell-size', size + 'px');
+    frame.style.gridTemplateColumns = `${edge}px repeat(${N}, ${size}px) ${edge}px`;
+    frame.style.gridTemplateRows    = `${edge}px repeat(${N}, ${size}px) ${edge}px`;
+    state.dom.frame = frame;
+    state.dom.cellSize = size;
+
+    if (edgeMode) {
+      /* Top edge: corner + N top clues + corner */
+      frame.appendChild(el('div'));
+      for (let c = 0; c < N; c++) frame.appendChild(makeEdge('top', c));
+      frame.appendChild(el('div'));
+    }
+
+    /* Middle rows: left clue + N grid cells + right clue.
+       We put the grid inside a single cell that spans all N interior columns/rows
+       to keep a rendering-friendly single relatively-positioned container. */
+    const grid = el('div', 'sudoku-grid');
+    grid.style.setProperty('--cell-size', size + 'px');
+    grid.style.gridTemplateColumns = `repeat(${N}, ${size}px)`;
+    grid.style.gridTemplateRows    = `repeat(${N}, ${size}px)`;
+    grid.style.gridColumn = `2 / span ${N}`;
+    grid.style.gridRow    = `2 / span ${N}`;
+
+    if (edgeMode) {
+      /* Left and right edge columns, positioned around the grid. */
+      for (let r = 0; r < N; r++) {
+        const left = makeEdge('left', r);
+        left.style.gridColumn = '1';
+        left.style.gridRow = (r + 2);
+        frame.appendChild(left);
+
+        const right = makeEdge('right', r);
+        right.style.gridColumn = (N + 2);
+        right.style.gridRow = (r + 2);
+        frame.appendChild(right);
+      }
+    }
+
+    frame.appendChild(grid);
+    state.dom.grid = grid;
+
+    if (edgeMode) {
+      /* Bottom edge */
+      const brow = el('div');
+      brow.style.gridColumn = '1';
+      brow.style.gridRow = (N + 2);
+      frame.appendChild(brow);
+      for (let c = 0; c < N; c++) {
+        const b = makeEdge('bottom', c);
+        b.style.gridColumn = (c + 2);
+        b.style.gridRow = (N + 2);
+        frame.appendChild(b);
+      }
+      const brow2 = el('div');
+      brow2.style.gridColumn = (N + 2);
+      brow2.style.gridRow = (N + 2);
+      frame.appendChild(brow2);
+    }
+
+    buildCells(grid);
+    host.appendChild(frame);
+  }
+
+  function makeSky(side, idx) {
+    return makeEdgeCell('sky', side, idx);
+  }
+  function makeSandwich(side, idx) {
+    return makeEdgeCell('sandwich', side, idx);
+  }
+  /* Shared edge-cell factory. `kind` selects the field, class, and clue-range:
+     - sky:      1..N     (visible skyscraper count)
+     - sandwich: 0..maxS  (sum between 1 and N; two digits for N ≥ 6). */
+  function makeEdgeCell(kind, side, idx) {
+    const N = state.puzzle.N;
+    const arr = state.puzzle[kind][side];
+    const val = arr[idx];
+    const cls = kind === 'sandwich' ? 'sandwich-cell' : 'sky-cell';
+    const cell = el('input', cls + (val ? ' filled' : ''));
+    cell.type = 'text';
+    cell.autocomplete = 'off';
+    /* Sandwich total can exceed 9 (N=9 max between-sum is 35), so allow 2+ digits. */
+    cell.maxLength = kind === 'sandwich' ? 3 : 2;
+    cell.value = val ? String(val) : '';
+    const maxSandwich = Math.max(0, (N * (N + 1)) / 2 - 1 - N);  /* sum of 2..N-1 */
+    cell.title = kind === 'sky'
+      ? L({ en: `Skyscrapers visible 1..${N} (blank clears)`,
+            zh: `可见摩天楼数 1..${N}（留空清除）` })
+      : L({ en: `Sandwich sum 0..${maxSandwich} between 1 and ${N}`,
+            zh: `1 与 ${N} 之间的数字之和 0..${maxSandwich}` });
+    if (side === 'top') {
+      cell.style.gridColumn = (idx + 2);
+      cell.style.gridRow = '1';
+    }
+    const maxVal = kind === 'sky' ? N : maxSandwich;
+    cell.addEventListener('focus', () => cell.select());
+    cell.addEventListener('input', () => {
+      const digits = cell.value.replace(/[^0-9]/g, '');
+      const n = digits === '' ? 0 : Number(digits);
+      if (n > maxVal) { cell.value = String(arr[idx] || ''); return; }
+      cell.value = n ? String(n) : '';
+      arr[idx] = n;
+      cell.classList.toggle('filled', !!n);
+      analyze();
+    });
+    cell.addEventListener('keydown', e => {
+      if (e.key === 'Backspace' && cell.value === '') {
+        e.preventDefault();
+        arr[idx] = 0;
+        return;
+      }
+      if (e.key === 'Escape') cell.blur();
+    });
+    return cell;
+  }
+
+  function buildCells(grid) {
+    const { N, boxR, boxC, values, given, regions, cages, thermos, rainbow } = state.puzzle;
+    const size = state.dom.cellSize;
+    const theme = AppTheme.get();
+    state.dom.cells = [];
+
+    /* Determine which cells share a region with each neighbor for thicker borders. */
+    grid.classList.toggle('jigsaw', hasCustomRegions());
+    /* `region-mode` reveals the per-cell region tint. Every cell gets a
+       --region-bg (custom or default) so when the tint is shown the whole
+       partition is visible — otherwise a half-painted region would render
+       as two colors (touched cells tinted, untouched cells plain). */
+    grid.classList.toggle('region-mode', state.tool === 'region');
+
+    for (let i = 0; i < N * N; i++) {
+      const r = (i / N) | 0, c = i % N;
+      const input = el('input', 'sudoku-cell');
+      input.type = 'text';
+      input.autocomplete = 'off';
+      input.maxLength = 1;
+      input.style.setProperty('--region-bg', regionColor(regions[i], theme));
+      /* Thick borders sit centred on every internal box / region boundary
+         by contributing an equal share from BOTH cells that meet across
+         that edge. That way the visual line falls exactly on the shared
+         edge (no half-pixel drift) and cage outlines that reference the
+         cell edge stay aligned with the region borders. */
+      if (hasCustomRegions()) {
+        if (r > 0     && regions[i - N] !== regions[i]) input.classList.add('bx-t');
+        if (c > 0     && regions[i - 1] !== regions[i]) input.classList.add('bx-l');
+        if (r < N - 1 && regions[i + N] !== regions[i]) input.classList.add('bx-b');
+        if (c < N - 1 && regions[i + 1] !== regions[i]) input.classList.add('bx-r');
+      } else {
+        if ((c + 1) % boxC === 0 && c !== N - 1) input.classList.add('bx-r');
+        if (c > 0 && c % boxC === 0)             input.classList.add('bx-l');
+        if ((r + 1) % boxR === 0 && r !== N - 1) input.classList.add('bx-b');
+        if (r > 0 && r % boxR === 0)             input.classList.add('bx-t');
+      }
+      /* Spectradoku tint stays visible in every tool: the coloring is part
+         of the puzzle constraint (all N colors per row/col/box, each digit
+         appears once per color), not just a drawing aid. */
+      if (rainbow && rainbow[i]) {
+        input.style.setProperty('--rainbow-bg', spectraColor(rainbow[i] - 1));
+        input.classList.add('rainbow-tinted');
+      }
+      input.value = values[i] ? digitToChar(values[i]) : '';
+      if (values[i] && given[i]) input.classList.add('given');
+      input.dataset.idx = i;
+      attachCellHandlers(input, i);
+      grid.appendChild(input);
+      state.dom.cells.push(input);
+    }
+
+    /* Cage borders + sum labels. */
+    drawCages();
+
+    /* Thermometer SVG overlay. */
+    drawThermos();
+
+    /* Whisper / Region-Sum / Modular / Renban / Palindrome / Entropic /
+       Parity-Line overlays share one SVG layer. */
+    drawLines();
+
+    /* Arrows (base pill + shaft + head). */
+    drawArrows();
+
+    /* Quadruple circles at grid intersections. */
+    drawQuadruples();
+
+    /* Kropki dots. */
+    drawKropki();
+
+    /* Compare / XV edge marks. */
+    drawCompare();
+    drawXV();
+
+    /* Odd/Even parity cell backgrounds. */
+    drawParity();
+  }
+
+  function hasCustomRegions() {
+    const { N, boxR, boxC, regions } = state.puzzle;
+    const rect = Core.rectRegions(N, boxR, boxC);
+    for (let i = 0; i < N * N; i++) if (rect[i] !== regions[i]) return true;
+    return false;
+  }
+
+  /* Inset padding (in px) between the cage outline and the cell edges. */
+  const CAGE_PAD = 3;
+
+  function drawCages() {
+    const { N, cages } = state.puzzle;
+    const grid = state.dom.grid;
+    grid.querySelectorAll('.cage-svg').forEach(n => n.remove());
+
+    const size = state.dom.cellSize;
+    const total = N * size;
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('class', 'cage-svg');
+    svg.setAttribute('width', total);
+    svg.setAttribute('height', total);
+    svg.setAttribute('viewBox', `0 0 ${total} ${total}`);
+
+    /* Finalized cages. */
+    cages.forEach(cage => {
+      addCageOutline(svg, cage.cells, size, '');
+      if (cage.sum != null) addCageSum(svg, cage.cells, size, cage.sum, '');
+    });
+
+    /* Draft cage (only visible while cage tool is active). The cells
+       themselves are lit up via the `.sel` region highlight (gray fill,
+       accent perimeter); only the pending sum label is rendered here. */
+    if (state.tool === 'cage' && state.cageDraft.cells.length) {
+      if (state.cageDraft.sum !== '' && state.cageDraft.sum != null) {
+        addCageSum(svg, state.cageDraft.cells, size, state.cageDraft.sum, 'draft');
+      }
+    }
+
+    grid.appendChild(svg);
+
+    /* Per-cell `.sel` region highlight for tools that build a multi-cell
+       draft. Cells appear as one contiguous region with a gray fill and a
+       blue border drawn only along the perimeter (edges where a neighbouring
+       cell is not part of the selection). */
+    state.dom.cells.forEach(c => c.classList.remove(
+      'sel', 'sel-t', 'sel-b', 'sel-l', 'sel-r', 'kropki-first'));
+    let selCells = [];
+    if (state.tool === 'thermo') selCells = state.thermoDraft.cells;
+    else if (LINE_TOOLS.has(state.tool)) selCells = state.lineDraft.cells;
+    else if (state.tool === 'cage') selCells = state.cageDraft.cells;
+    else if (state.tool === 'arrow') selCells = state.arrowDraft.base.concat(state.arrowDraft.path);
+    applySelEdges(selCells);
+    if (state.tool === 'kropki'  && state.kropkiFirst  >= 0) state.dom.cells[state.kropkiFirst ].classList.add('kropki-first');
+    if (state.tool === 'compare' && state.compareFirst >= 0) state.dom.cells[state.compareFirst].classList.add('kropki-first');
+    if (state.tool === 'xv'      && state.xvFirst      >= 0) state.dom.cells[state.xvFirst     ].classList.add('kropki-first');
+  }
+
+  /* Given a set of selected cell indices, mark each cell with `.sel` plus
+     directional edge classes (`.sel-t/b/l/r`) for the outer perimeter.
+     Interior shared edges get no border, so the group renders as one region. */
+  function applySelEdges(cells) {
+    if (!cells || !cells.length) return;
+    const N = state.puzzle.N;
+    const inSet = new Uint8Array(N * N);
+    for (const i of cells) inSet[i] = 1;
+    for (const i of cells) {
+      const cell = state.dom.cells[i]; if (!cell) continue;
+      const r = (i / N) | 0, c = i % N;
+      cell.classList.add('sel');
+      if (r === 0     || !inSet[i - N]) cell.classList.add('sel-t');
+      if (r === N - 1 || !inSet[i + N]) cell.classList.add('sel-b');
+      if (c === 0     || !inSet[i - 1]) cell.classList.add('sel-l');
+      if (c === N - 1 || !inSet[i + 1]) cell.classList.add('sel-r');
+    }
+  }
+
+  function addCageSum(svg, cells, S, sum, kind) {
+    const { N } = state.puzzle;
+    /* Anchor = top-most, left-most cell of the cage. */
+    let anchor = cells[0];
+    for (const i of cells) {
+      const r = (i / N) | 0, c = i % N;
+      const ar = (anchor / N) | 0, ac = anchor % N;
+      if (r < ar || (r === ar && c < ac)) anchor = i;
+    }
+    const ar = (anchor / N) | 0, ac = anchor % N;
+    const fs = Math.max(9, Math.round(S * 0.28));
+    const t = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    t.setAttribute('class', 'sum' + (kind ? ' ' + kind : ''));
+    t.setAttribute('x', ac * S + CAGE_PAD + 2);
+    t.setAttribute('y', ar * S + CAGE_PAD + 1);
+    t.setAttribute('font-size', fs);
+    t.textContent = String(sum);
+    svg.appendChild(t);
+  }
+
+  /* Compute the inset dashed outline for one cage and append it to `svg`.
+     For a cell whose neighbor is outside the cage, we draw an inset segment
+     along the shared side. Extensions handle convex corners (segment reaches
+     the inset corner); explicit closure segments handle concave corners
+     (where three of the four cells around an interior vertex are in the cage,
+     the boundary must dip inward to close). */
+  function addCageOutline(svg, cells, S, kind) {
+    if (!cells.length) return;
+    const { N } = state.puzzle;
+    const inCage = new Uint8Array(N * N);
+    for (const i of cells) inCage[i] = 1;
+    const has = (r, c) => (r >= 0 && r < N && c >= 0 && c < N && inCage[r * N + c]);
+    const P = CAGE_PAD;
+    const segments = [];
+    const push = (x1, y1, x2, y2) => segments.push([x1, y1, x2, y2]);
+
+    for (const idx of cells) {
+      const r = (idx / N) | 0, c = idx % N;
+      const x0 = c * S, y0 = r * S, x1 = x0 + S, y1 = y0 + S;
+
+      /* Top edge is a boundary when the cell above isn't in the cage. */
+      if (!has(r - 1, c)) {
+        let a = x0 + P, b = x1 - P;
+        if (has(r, c - 1) && !has(r - 1, c - 1)) a -= P + P;  /* reach left neighbor */
+        if (has(r, c + 1) && !has(r - 1, c + 1)) b += P + P;  /* reach right neighbor */
+        push(a, y0 + P, b, y0 + P);
+      }
+      if (!has(r + 1, c)) {
+        let a = x0 + P, b = x1 - P;
+        if (has(r, c - 1) && !has(r + 1, c - 1)) a -= P + P;
+        if (has(r, c + 1) && !has(r + 1, c + 1)) b += P + P;
+        push(a, y1 - P, b, y1 - P);
+      }
+      if (!has(r, c - 1)) {
+        let a = y0 + P, b = y1 - P;
+        if (has(r - 1, c) && !has(r - 1, c - 1)) a -= P + P;
+        if (has(r + 1, c) && !has(r + 1, c - 1)) b += P + P;
+        push(x0 + P, a, x0 + P, b);
+      }
+      if (!has(r, c + 1)) {
+        let a = y0 + P, b = y1 - P;
+        if (has(r - 1, c) && !has(r - 1, c + 1)) a -= P + P;
+        if (has(r + 1, c) && !has(r + 1, c + 1)) b += P + P;
+        push(x1 - P, a, x1 - P, b);
+      }
+    }
+
+    /* Concave-corner closures. For every interior vertex where exactly 3 of
+       the 4 surrounding cells are in the cage, add the two short segments
+       that bridge the boundary around the missing cell. */
+    for (let vr = 1; vr < N; vr++) {
+      for (let vc = 1; vc < N; vc++) {
+        const A = has(vr - 1, vc - 1), B = has(vr - 1, vc);
+        const C = has(vr, vc - 1),     D = has(vr, vc);
+        const count = A + B + C + D;
+        if (count !== 3) continue;
+        const X = vc * S, Y = vr * S;
+        if (!A) { /* B, C, D in — close around top-left */
+          push(X + P, Y - P, X + P, Y + P);
+          push(X + P, Y + P, X - P, Y + P);
+        } else if (!B) { /* A, C, D in — close around top-right */
+          push(X - P, Y - P, X - P, Y + P);
+          push(X - P, Y + P, X + P, Y + P);
+        } else if (!C) { /* A, B, D in — close around bottom-left */
+          push(X - P, Y - P, X + P, Y - P);
+          push(X + P, Y - P, X + P, Y + P);
+        } else if (!D) { /* A, B, C in — close around bottom-right */
+          push(X + P, Y - P, X - P, Y - P);
+          push(X - P, Y - P, X - P, Y + P);
+        }
+      }
+    }
+
+    /* Emit segments as individual polylines so dashes reset per stroke. */
+    const cls = 'outline' + (kind ? ' ' + kind : '');
+    for (const [x1, y1, x2, y2] of segments) {
+      const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+      line.setAttribute('class', cls);
+      line.setAttribute('x1', x1);
+      line.setAttribute('y1', y1);
+      line.setAttribute('x2', x2);
+      line.setAttribute('y2', y2);
+      svg.appendChild(line);
+    }
+  }
+
+  function drawThermos() {
+    const { N, thermos } = state.puzzle;
+    const size = state.dom.cellSize;
+    const total = N * size;
+    /* Remove old overlays. */
+    const grid = state.dom.grid;
+    grid.querySelectorAll('.thermo-svg').forEach(n => n.remove());
+
+    const drawOne = (path, active) => {
+      if (path.length === 0) return;
+      const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      svg.setAttribute('class', 'thermo-svg');
+      svg.setAttribute('width', total);
+      svg.setAttribute('height', total);
+      svg.setAttribute('viewBox', `0 0 ${total} ${total}`);
+      const centers = path.map(i => {
+        const r = (i / N) | 0, c = i % N;
+        return [c * size + size / 2, r * size + size / 2];
+      });
+      /* Bulb + stem sit inside one <g> so the group's opacity applies to the
+         merged shape — overlapping regions no longer double-alpha into a
+         darker patch the way stacked semi-transparent shapes do. */
+      const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+      g.setAttribute('class', 'thermo-group' + (active ? ' active' : ''));
+      const bulb = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+      bulb.setAttribute('class', 'bulb');
+      bulb.setAttribute('cx', centers[0][0]);
+      bulb.setAttribute('cy', centers[0][1]);
+      bulb.setAttribute('r', size * 0.34);
+      g.appendChild(bulb);
+      if (centers.length > 1) {
+        const pts = centers.map(p => `${p[0]},${p[1]}`).join(' ');
+        const line = document.createElementNS('http://www.w3.org/2000/svg', 'polyline');
+        line.setAttribute('class', 'stem');
+        line.setAttribute('points', pts);
+        line.setAttribute('stroke-width', size * 0.22);
+        line.setAttribute('stroke-linecap', 'round');
+        line.setAttribute('stroke-linejoin', 'round');
+        g.appendChild(line);
+      }
+      svg.appendChild(g);
+      grid.appendChild(svg);
+    };
+
+    thermos.forEach(t => drawOne(t, false));
+    if (state.tool === 'thermo') drawOne(state.thermoDraft.cells, true);
+  }
+
+  /* Whisper, region-sum, and modular lines share a single SVG overlay layer.
+     Each type has its own class so styles/colors/dash-patterns distinguish
+     them and no two look alike. */
+  /* Type-tag glyph for each line class (single character near the line's
+     first cell so overlapping lines stay identifiable). */
+  const LINE_TAG_GLYPH = {
+    whisper:   'W',
+    regionsum: 'Σ',
+    modular:   'M',
+    renban:    'R',
+    palindrome:'P',
+    entropic:  'E',
+    parityline:'±',
+  };
+
+  function drawLines() {
+    const { N, whispers, regionSums, modulars, renbans, palindromes, entropics, parityLines } = state.puzzle;
+    const size = state.dom.cellSize;
+    const total = N * size;
+    const grid = state.dom.grid;
+    grid.querySelectorAll('.line-svg').forEach(n => n.remove());
+
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('class', 'line-svg');
+    svg.setAttribute('width', total);
+    svg.setAttribute('height', total);
+    svg.setAttribute('viewBox', `0 0 ${total} ${total}`);
+
+    const drawOne = (cls, path, active) => {
+      if (path.length < 1) return;
+      const pts = path.map(i => {
+        const r = (i / N) | 0, c = i % N;
+        return `${c * size + size / 2},${r * size + size / 2}`;
+      }).join(' ');
+      const line = document.createElementNS('http://www.w3.org/2000/svg', 'polyline');
+      line.setAttribute('class', 'line ' + cls + (active ? ' active' : ''));
+      line.setAttribute('points', pts);
+      line.setAttribute('stroke-width', size * 0.18);
+      line.setAttribute('stroke-linecap', 'round');
+      line.setAttribute('stroke-linejoin', 'round');
+      svg.appendChild(line);
+      /* Small type-tag near the first cell so intersecting lines stay
+         identifiable even when colors overlap. */
+      const first = path[0];
+      const fr = (first / N) | 0, fc = first % N;
+      const t = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      t.setAttribute('class', 'line-tag ' + cls);
+      t.setAttribute('x', fc * size + size * 0.12);
+      t.setAttribute('y', fr * size + size * 0.28);
+      t.setAttribute('font-size', Math.max(8, size * 0.28));
+      t.textContent = LINE_TAG_GLYPH[cls] || '';
+      svg.appendChild(t);
+    };
+
+    whispers   .forEach(l => drawOne('whisper',    l, false));
+    regionSums .forEach(l => drawOne('regionsum',  l, false));
+    modulars   .forEach(l => drawOne('modular',    l, false));
+    renbans    .forEach(l => drawOne('renban',     l, false));
+    palindromes.forEach(l => drawOne('palindrome', l, false));
+    entropics  .forEach(l => drawOne('entropic',   l, false));
+    parityLines.forEach(l => drawOne('parityline', l, false));
+
+    /* Preview the current draft in its own line class so users see which
+       constraint they're building without having to squint at the tab. */
+    const draftClsByTool = {
+      whisper: 'whisper', regionSum: 'regionsum', modular: 'modular',
+      renban: 'renban', palindrome: 'palindrome', entropic: 'entropic',
+      parityLine: 'parityline',
+    };
+    const draftCls = draftClsByTool[state.tool];
+    if (draftCls) drawOne(draftCls, state.lineDraft.cells, true);
+
+    grid.appendChild(svg);
+  }
+
+  /* Arrows overlay. Each arrow has a pill-shaped base at its head cells
+     and a shaft polyline with an arrowhead at the tip. */
+  function drawArrows() {
+    const { N, arrows } = state.puzzle;
+    const size = state.dom.cellSize;
+    const total = N * size;
+    const grid = state.dom.grid;
+    grid.querySelectorAll('.arrow-svg').forEach(n => n.remove());
+
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('class', 'arrow-svg');
+    svg.setAttribute('width', total);
+    svg.setAttribute('height', total);
+    svg.setAttribute('viewBox', `0 0 ${total} ${total}`);
+
+    const drawOne = (base, path, active) => {
+      const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+      g.setAttribute('class', 'arrow-group' + (active ? ' active' : ''));
+      /* Base pill: rounded rectangle spanning the base cells. */
+      if (base.length) {
+        const rs = base.map(i => (i / N) | 0);
+        const cs = base.map(i => i % N);
+        const r0 = Math.min(...rs), r1 = Math.max(...rs);
+        const c0 = Math.min(...cs), c1 = Math.max(...cs);
+        const pad = size * 0.14;
+        const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+        rect.setAttribute('class', 'base');
+        rect.setAttribute('x', c0 * size + pad);
+        rect.setAttribute('y', r0 * size + pad);
+        rect.setAttribute('width',  (c1 - c0 + 1) * size - pad * 2);
+        rect.setAttribute('height', (r1 - r0 + 1) * size - pad * 2);
+        rect.setAttribute('rx', size * 0.42);
+        rect.setAttribute('ry', size * 0.42);
+        g.appendChild(rect);
+      }
+      /* Shaft polyline from the base pill's edge (not centre) through the
+         path cells. The pill has an "end-cap" radius of ~size * 0.36 — the
+         base rectangle is inset by `pad` on every side, so the rounded
+         end sits size/2 - pad = size*0.36 from the anchor cell centre.
+         Shifting the shaft start out by that radius makes the shaft
+         appear to emerge from the pill's edge rather than passing
+         through its centre. */
+      if (path.length) {
+        const anchor = base.length ? base[base.length - 1] : path[0];
+        const centerOf = i => {
+          const r = (i / N) | 0, c = i % N;
+          return [c * size + size / 2, r * size + size / 2];
+        };
+        const anchorC = centerOf(anchor);
+        const firstShaftC = centerOf(path[0]);
+        let startPoint = anchorC;
+        if (base.length) {
+          const dx = firstShaftC[0] - anchorC[0];
+          const dy = firstShaftC[1] - anchorC[1];
+          const dist = Math.hypot(dx, dy) || 1;
+          const pillR = size * 0.36;
+          startPoint = [
+            anchorC[0] + (dx / dist) * pillR,
+            anchorC[1] + (dy / dist) * pillR,
+          ];
+        }
+        const pts = [startPoint, ...path.map(centerOf)];
+        const pline = document.createElementNS('http://www.w3.org/2000/svg', 'polyline');
+        pline.setAttribute('class', 'shaft');
+        pline.setAttribute('points', pts.map(p => p.join(',')).join(' '));
+        pline.setAttribute('stroke-width', Math.max(1.4, size * 0.06));
+        pline.setAttribute('fill', 'none');
+        pline.setAttribute('stroke-linecap', 'round');
+        pline.setAttribute('stroke-linejoin', 'round');
+        g.appendChild(pline);
+        /* Arrowhead: small triangle at the tip pointing along the last segment. */
+        if (pts.length >= 2) {
+          const tip = pts[pts.length - 1];
+          const prev = pts[pts.length - 2];
+          const dx = tip[0] - prev[0], dy = tip[1] - prev[1];
+          const len = Math.hypot(dx, dy) || 1;
+          const ux = dx / len, uy = dy / len;
+          const nx = -uy, ny = ux;   /* perpendicular unit vector */
+          const H = size * 0.22;
+          const W = size * 0.13;
+          const bx = tip[0] - ux * H, by = tip[1] - uy * H;
+          const p1 = [bx + nx * W, by + ny * W];
+          const p2 = [bx - nx * W, by - ny * W];
+          const head = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+          head.setAttribute('class', 'head');
+          head.setAttribute('points', `${tip[0]},${tip[1]} ${p1[0]},${p1[1]} ${p2[0]},${p2[1]}`);
+          g.appendChild(head);
+        }
+      }
+      svg.appendChild(g);
+    };
+
+    arrows.forEach(a => drawOne(a.base || [], a.path || [], false));
+    if (state.tool === 'arrow') {
+      const d = state.arrowDraft;
+      drawOne(d.base, d.path, true);
+    }
+    grid.appendChild(svg);
+  }
+
+  /* Quadruple overlay. A small circle sits at the intersection of 4 cells
+     with up to 4 required digits laid out around its centre. */
+  function drawQuadruples() {
+    const { N, quadruples } = state.puzzle;
+    const size = state.dom.cellSize;
+    const total = N * size;
+    const grid = state.dom.grid;
+    grid.querySelectorAll('.quad-svg').forEach(n => n.remove());
+    if (!quadruples.length) return;
+
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('class', 'quad-svg');
+    svg.setAttribute('width', total);
+    svg.setAttribute('height', total);
+    svg.setAttribute('viewBox', `0 0 ${total} ${total}`);
+
+    for (const q of quadruples) {
+      const cx = q.c * size, cy = q.r * size;
+      const rad = size * 0.28;
+      const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+      g.setAttribute('class', 'quad');
+      const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+      circle.setAttribute('cx', cx);
+      circle.setAttribute('cy', cy);
+      circle.setAttribute('r', rad);
+      g.appendChild(circle);
+      /* Layout digits: 1-4 slots — TL, TR, BL, BR. */
+      const slots = [[-1, -1], [1, -1], [-1, 1], [1, 1]];
+      const digits = (q.digits || []).slice(0, 4);
+      digits.forEach((d, k) => {
+        const [dx, dy] = slots[k];
+        const t = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+        t.setAttribute('class', 'digit');
+        t.setAttribute('x', cx + dx * rad * 0.45);
+        t.setAttribute('y', cy + dy * rad * 0.45);
+        t.setAttribute('text-anchor', 'middle');
+        t.setAttribute('dominant-baseline', 'central');
+        t.setAttribute('font-size', Math.max(8, size * 0.26));
+        t.textContent = digitToChar(d);
+        g.appendChild(t);
+      });
+      svg.appendChild(g);
+    }
+    grid.appendChild(svg);
+  }
+
+  /* Kropki dots overlay. A small circle sits on the midpoint of the shared
+     edge between two orthogonally-adjacent cells. White dots have a filled
+     white body with a dark rim; black dots are solid dark with a light rim. */
+  function drawKropki() {
+    const { N, kropki } = state.puzzle;
+    const size = state.dom.cellSize;
+    const total = N * size;
+    const grid = state.dom.grid;
+    grid.querySelectorAll('.kropki-svg').forEach(n => n.remove());
+
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('class', 'kropki-svg');
+    svg.setAttribute('width', total);
+    svg.setAttribute('height', total);
+    svg.setAttribute('viewBox', `0 0 ${total} ${total}`);
+
+    for (const d of kropki) {
+      const [ar, ac] = [(d.a / N) | 0, d.a % N];
+      const [br, bc] = [(d.b / N) | 0, d.b % N];
+      const cx = ((ac + bc) / 2 + 0.5) * size;
+      const cy = ((ar + br) / 2 + 0.5) * size;
+      const dot = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+      dot.setAttribute('class', 'kropki-dot ' + (d.kind === 'w' ? 'white' : 'black'));
+      dot.setAttribute('cx', cx);
+      dot.setAttribute('cy', cy);
+      dot.setAttribute('r', Math.max(4, size * 0.14));
+      svg.appendChild(dot);
+    }
+    grid.appendChild(svg);
+  }
+
+  /* Shared helper: for two orthogonally-adjacent cells a<b, return the
+     midpoint of their shared edge and the neighbour orientation. */
+  function edgeMidpoint(a, b, N, size) {
+    const [ar, ac] = [(a / N) | 0, a % N];
+    const [br, bc] = [(b / N) | 0, b % N];
+    const cx = ((ac + bc) / 2 + 0.5) * size;
+    const cy = ((ar + br) / 2 + 0.5) * size;
+    const horizontal = ar === br;   /* pair lies on a horizontal neighbour edge */
+    return { cx, cy, horizontal, ar, ac, br, bc };
+  }
+
+  /* Compare marks: a chevron pointing at the smaller cell (kind='lt' means
+     a<b so it points at a; 'gt' means a>b so it points at b). Rotated to
+     lie on the shared edge; drawn as an SVG polyline in accent color. */
+  function drawCompare() {
+    const { N, compare } = state.puzzle;
+    const size = state.dom.cellSize;
+    const total = N * size;
+    const grid = state.dom.grid;
+    grid.querySelectorAll('.compare-svg').forEach(n => n.remove());
+
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('class', 'compare-svg');
+    svg.setAttribute('width', total);
+    svg.setAttribute('height', total);
+    svg.setAttribute('viewBox', `0 0 ${total} ${total}`);
+
+    for (const d of compare) {
+      const em = edgeMidpoint(d.a, d.b, N, size);
+      /* Which cell is smaller? point the chevron at it. */
+      const smaller = d.kind === 'lt' ? d.a : d.b;
+      const [sr, sc] = [(smaller / N) | 0, smaller % N];
+      const [or, oc] = smaller === d.a
+        ? [(d.b / N) | 0, d.b % N]
+        : [(d.a / N) | 0, d.a % N];
+      /* Direction from the edge midpoint toward the SMALLER cell. */
+      const dx = Math.sign(sc - oc);   /* -1 (left) or +1 (right) or 0 */
+      const dy = Math.sign(sr - or);   /* -1 (up)   or +1 (down)  or 0 */
+      /* Base chevron is a "<" opening to the right (points left).
+         Rotate so its point aligns with (dx, dy). */
+      const angle = Math.atan2(dy, dx) * 180 / Math.PI;   /* 180=left, 0=right, -90=up, 90=down */
+      /* Rotation needed so the base ">" (points right, angle 0) faces (dx,dy).
+         Actually we author the glyph as ">" (points right) and rotate. */
+      const rot = angle;
+      const h = size * 0.22;   /* half-height of chevron */
+      const w = size * 0.16;   /* wing length */
+      const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+      g.setAttribute('class', 'compare-mark');
+      g.setAttribute('transform', `translate(${em.cx},${em.cy}) rotate(${rot})`);
+      /* Chevron bounding box previously spanned x∈[-w, 0], so its visual
+         centre sat at (-w/2, 0) — the "point" landed on the edge midpoint
+         instead of the whole glyph. We re-author it centred on the origin
+         (bbox x∈[-w/2, w/2]) so that translate(cx, cy) actually puts the
+         mark's centre on the shared-edge midpoint. */
+      const path = document.createElementNS('http://www.w3.org/2000/svg', 'polyline');
+      path.setAttribute('points', `${-w/2},${-h} ${w/2},0 ${-w/2},${h}`);
+      path.setAttribute('stroke-width', Math.max(1.5, size * 0.06));
+      g.appendChild(path);
+      svg.appendChild(g);
+    }
+    grid.appendChild(svg);
+  }
+
+  /* XV clues: "X" or "V" text on the shared edge. */
+  function drawXV() {
+    const { N, xv } = state.puzzle;
+    const size = state.dom.cellSize;
+    const total = N * size;
+    const grid = state.dom.grid;
+    grid.querySelectorAll('.xv-svg').forEach(n => n.remove());
+
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('class', 'xv-svg');
+    svg.setAttribute('width', total);
+    svg.setAttribute('height', total);
+    svg.setAttribute('viewBox', `0 0 ${total} ${total}`);
+
+    for (const d of xv) {
+      const em = edgeMidpoint(d.a, d.b, N, size);
+      const t = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      t.setAttribute('class', 'xv-mark ' + d.kind);
+      t.setAttribute('x', em.cx);
+      t.setAttribute('y', em.cy);
+      t.setAttribute('text-anchor', 'middle');
+      t.setAttribute('dominant-baseline', 'middle');
+      t.setAttribute('font-size', Math.max(10, size * 0.42));
+      t.textContent = d.kind === 'x' ? 'X' : 'V';
+      svg.appendChild(t);
+    }
+    grid.appendChild(svg);
+  }
+
+  /* Parity marks: toggle CSS classes on the cell inputs — the actual glyph
+     is a background-image on the input, which sits behind the typed digit
+     without any layering gymnastics. */
+  function drawParity() {
+    const { parity } = state.puzzle;
+    for (let i = 0; i < parity.length; i++) {
+      const c = state.dom.cells[i]; if (!c) continue;
+      c.classList.remove('parity-odd', 'parity-even');
+      if (parity[i] === 1) c.classList.add('parity-odd');
+      else if (parity[i] === 2) c.classList.add('parity-even');
+    }
+  }
+
+  /* ---------- Cell interaction dispatch ---------- */
+  function attachCellHandlers(input, i) {
+    input.addEventListener('focus', () => input.select());
+
+    input.addEventListener('mousedown', e => {
+      if (state.tool === 'region') { e.preventDefault(); state.regionDrag = true; paintRegionLight(i); }
+      else if (state.tool === 'rainbow') { e.preventDefault(); state.rainbowDrag = true; paintRainbowLight(i); }
+      else if (state.tool === 'cage') { e.preventDefault(); beginCageDrag(i); }
+      else if (state.tool === 'thermo') { e.preventDefault(); state.pathDrag = true; addThermoCellLight(i); }
+      else if (LINE_TOOLS.has(state.tool)) {
+        e.preventDefault(); state.pathDrag = true; addLineCellLight(i);
+      }
+      else if (state.tool === 'arrow') { e.preventDefault(); state.pathDrag = true; addArrowCellLight(i); }
+      else if (state.tool === 'quadruple') { e.preventDefault(); handleQuadClick(i); }
+      else if (state.tool === 'kropki') { e.preventDefault(); handleKropkiClick(i); }
+      else if (state.tool === 'compare') { e.preventDefault(); handleCompareClick(i); }
+      else if (state.tool === 'xv') { e.preventDefault(); handleXVClick(i); }
+      else if (state.tool === 'parity') { e.preventDefault(); state.parityDrag = true; paintParityLight(i); }
+    });
+    input.addEventListener('mouseenter', () => {
+      if (state.tool === 'cage' && state.cageDrag) applyCageDrag(i);
+      else if (state.tool === 'region' && state.regionDrag) paintRegionLight(i);
+      else if (state.tool === 'rainbow' && state.rainbowDrag) paintRainbowLight(i);
+      else if (state.tool === 'thermo' && state.pathDrag) addThermoCellLight(i);
+      else if (state.pathDrag && LINE_TOOLS.has(state.tool)) addLineCellLight(i);
+      else if (state.tool === 'arrow' && state.pathDrag) addArrowCellLight(i);
+      else if (state.tool === 'parity' && state.parityDrag) paintParityLight(i);
+    });
+
+    input.addEventListener('keydown', e => {
+      const N = state.puzzle.N;
+      const idx = i;
+      if (e.key === 'ArrowRight' && idx % N < N - 1) { e.preventDefault(); state.dom.cells[idx + 1].focus(); return; }
+      if (e.key === 'ArrowLeft'  && idx % N > 0)     { e.preventDefault(); state.dom.cells[idx - 1].focus(); return; }
+      if (e.key === 'ArrowDown'  && idx < N * (N - 1)) { e.preventDefault(); state.dom.cells[idx + N].focus(); return; }
+      if (e.key === 'ArrowUp'    && idx >= N)         { e.preventDefault(); state.dom.cells[idx - N].focus(); return; }
+      if (state.tool !== 'digit') { e.preventDefault(); return; }
+      if (e.key === 'Backspace' || e.key === 'Delete') {
+        e.preventDefault();
+        state.puzzle.values[idx] = 0;
+        state.puzzle.given[idx] = 0;
+        input.value = '';
+        input.classList.remove('given');
+        analyze();
+        return;
+      }
+      if (isDigitKey(e.key, N)) {
+        e.preventDefault();
+        const v = charToDigit(e.key);
+        state.puzzle.values[idx] = v;
+        state.puzzle.given[idx] = 1;
+        input.value = digitToChar(v);
+        input.classList.add('given');
+        analyze();
+        return;
+      }
+      if (e.key === 'Tab' || e.key === 'Enter' || e.metaKey || e.ctrlKey || e.altKey) return;
+      e.preventDefault();
+    });
+
+    input.addEventListener('input', e => {
+      const N = state.puzzle.N;
+      const raw = e.target.value.toUpperCase();
+      const v = charToDigit(raw);
+      if (v >= 1 && v <= N) {
+        state.puzzle.values[i] = v;
+        state.puzzle.given[i] = 1;
+        input.value = digitToChar(v);
+        input.classList.add('given');
+      } else {
+        state.puzzle.values[i] = 0;
+        state.puzzle.given[i] = 0;
+        input.value = '';
+        input.classList.remove('given');
+      }
+      analyze();
+    });
+  }
+
+  function paintRegion(i) {
+    paintRegionLight(i);
+    analyze();
+  }
+  /* Update one cell's region without a full rebuild — recolors the tinted
+     background and recomputes jigsaw borders for the touched cell and its
+     four orthogonal neighbours (borders depend on both sides). */
+  function paintRegionLight(i) {
+    const p = state.puzzle;
+    if (p.regions[i] === state.regionPick) return;
+    p.regions[i] = state.regionPick;
+    const N = p.N;
+    const grid = state.dom.grid;
+    grid.classList.toggle('jigsaw', hasCustomRegions());
+    const jig = grid.classList.contains('jigsaw');
+    const theme = AppTheme.get();
+    const touch = [i];
+    const r = (i / N) | 0, c = i % N;
+    if (r > 0)     touch.push(i - N);
+    if (r < N - 1) touch.push(i + N);
+    if (c > 0)     touch.push(i - 1);
+    if (c < N - 1) touch.push(i + 1);
+    for (const k of touch) {
+      const cell = state.dom.cells[k]; if (!cell) continue;
+      cell.classList.remove('bx-t','bx-b','bx-l','bx-r');
+      const kr = (k / N) | 0, kc = k % N;
+      /* Always keep --region-bg current so the region-mode tint covers the
+         whole grid; without this, a half-painted region would render as two
+         colors (the touched cells vs. the untouched ones). */
+      cell.style.setProperty('--region-bg', regionColor(p.regions[k], theme));
+      /* Mirror the four-sided edge convention used by buildCells so every
+         boundary is drawn from both adjacent cells and stays centered. */
+      if (jig) {
+        if (kr > 0     && p.regions[k - N] !== p.regions[k]) cell.classList.add('bx-t');
+        if (kc > 0     && p.regions[k - 1] !== p.regions[k]) cell.classList.add('bx-l');
+        if (kr < N - 1 && p.regions[k + N] !== p.regions[k]) cell.classList.add('bx-b');
+        if (kc < N - 1 && p.regions[k + 1] !== p.regions[k]) cell.classList.add('bx-r');
+      } else {
+        if ((kc + 1) % p.boxC === 0 && kc !== N - 1) cell.classList.add('bx-r');
+        if (kc > 0 && kc % p.boxC === 0)             cell.classList.add('bx-l');
+        if ((kr + 1) % p.boxR === 0 && kr !== N - 1) cell.classList.add('bx-b');
+        if (kr > 0 && kr % p.boxR === 0)             cell.classList.add('bx-t');
+      }
+    }
+  }
+
+  /* Find the finalized-cage index containing cell `i`, or -1. */
+  function cageIndexAt(i) {
+    const cs = state.puzzle.cages;
+    for (let k = 0; k < cs.length; k++) if (cs[k].cells.includes(i)) return k;
+    return -1;
+  }
+
+  /* Mousedown on a cell in cage mode:
+     - If the cell belongs to a finalized cage, "unfreeze" it: pop that cage
+       out of the puzzle and load its cells + sum into the draft so both the
+       shape and the sum can be edited. Drag mode is then 'add'.
+     - Otherwise, drag mode is 'add' when the cell is not yet in the draft,
+       'remove' when it is. */
+  function beginCageDrag(i) {
+    const existing = cageIndexAt(i);
+    if (existing >= 0) {
+      /* If a different draft is in progress, commit it first so the user
+         doesn't lose their in-progress selection. */
+      if (state.cageDraft.cells.length) finishCage();
+      const cage = state.puzzle.cages.splice(existing, 1)[0];
+      state.cageDraft = { cells: [...cage.cells], sum: cage.sum == null ? '' : String(cage.sum) };
+      state.cageDrag = { mode: 'add' };
+      rebuild();
+      return;
+    }
+    const draftHas = state.cageDraft.cells.indexOf(i) >= 0;
+    state.cageDrag = { mode: draftHas ? 'remove' : 'add' };
+    applyCageDrag(i);
+  }
+
+  function applyCageDrag(i) {
+    if (!state.cageDrag) return;
+    /* Never sweep into cells owned by another finalized cage. */
+    if (cageIndexAt(i) >= 0) return;
+    const arr = state.cageDraft.cells;
+    const at = arr.indexOf(i);
+    if (state.cageDrag.mode === 'add' && at < 0) arr.push(i);
+    else if (state.cageDrag.mode === 'remove' && at >= 0) arr.splice(at, 1);
+    else return;
+    /* Light refresh — avoid rebuilding the whole page so the drag stays live. */
+    fillToolPanel();
+    drawCages();
+  }
+
+  function endCageDrag() {
+    if (!state.cageDrag) return;
+    state.cageDrag = null;
+    /* Re-run analysis once at the end of the drag. */
+    analyze();
+  }
+
+  function addThermoCell(i) { addThermoCellLight(i); }
+  function addThermoCellLight(i) {
+    const arr = state.thermoDraft.cells;
+    const N = state.puzzle.N;
+    if (arr.length === 0) { arr.push(i); refreshPathOverlays(); return; }
+    if (arr[arr.length - 1] === i) return;
+    const prev = arr[arr.length - 1];
+    const dr = Math.abs(((i / N) | 0) - ((prev / N) | 0));
+    const dc = Math.abs((i % N) - (prev % N));
+    if (dr <= 1 && dc <= 1 && (dr + dc) > 0 && arr.indexOf(i) === -1) {
+      arr.push(i);
+      refreshPathOverlays();
+    }
+  }
+
+  /* Shared path builder for whisper / region-sum / modular lines.
+     Extensions may step to any of the 8 king-move neighbours (orthogonal
+     OR diagonal) — the constraints are stated for consecutive cells along
+     the line, and the solver treats the pair-list agnostically, so
+     diagonal steps carry the same semantics as orthogonal ones. */
+  function addLineCell(i) { addLineCellLight(i); }
+  function addLineCellLight(i) {
+    const arr = state.lineDraft.cells;
+    if (arr.length === 0) { arr.push(i); refreshPathOverlays(); return; }
+    if (arr[arr.length - 1] === i) return;
+    const N = state.puzzle.N;
+    const prev = arr[arr.length - 1];
+    const dr = Math.abs(((i / N) | 0) - ((prev / N) | 0));
+    const dc = Math.abs((i % N) - (prev % N));
+    if (dr <= 1 && dc <= 1 && (dr + dc) > 0 && arr.indexOf(i) === -1) {
+      arr.push(i);
+      refreshPathOverlays();
+    }
+  }
+
+  /* Redraw the SVG overlays and per-cell `.sel` outlines during a drag,
+     without rebuilding the whole grid. Also refresh the tool panel so the
+     "path length" counter stays in sync. */
+  function refreshPathOverlays() {
+    drawThermos();
+    drawLines();
+    drawArrows();
+    state.dom.cells.forEach(c => c.classList.remove('sel', 'sel-t', 'sel-b', 'sel-l', 'sel-r'));
+    if (state.tool === 'thermo') applySelEdges(state.thermoDraft.cells);
+    else if (LINE_TOOLS.has(state.tool)) applySelEdges(state.lineDraft.cells);
+    else if (state.tool === 'arrow') applySelEdges(state.arrowDraft.base.concat(state.arrowDraft.path));
+    fillToolPanel();
+  }
+
+  /* Kropki click: two consecutive clicks on orthogonally-adjacent cells
+     toggle a dot of the current kind. Clicking the same cell twice cancels
+     the pending pair. */
+  function handleKropkiClick(i) {
+    if (state.kropkiFirst === -1) {
+      state.kropkiFirst = i;
+      rebuild();
+      return;
+    }
+    if (state.kropkiFirst === i) {
+      state.kropkiFirst = -1;
+      rebuild();
+      return;
+    }
+    const N = state.puzzle.N;
+    const a = state.kropkiFirst, b = i;
+    const dr = Math.abs(((a / N) | 0) - ((b / N) | 0));
+    const dc = Math.abs((a % N) - (b % N));
+    if (dr + dc !== 1) {
+      /* Non-adjacent → restart selection from the new cell. */
+      state.kropkiFirst = i;
+      rebuild();
+      return;
+    }
+    const kind = state.kropkiKind;
+    const [x, y] = a < b ? [a, b] : [b, a];
+    const list = state.puzzle.kropki;
+    const found = list.findIndex(d => d.a === x && d.b === y);
+    if (found >= 0) {
+      if (list[found].kind === kind) list.splice(found, 1);   /* same kind → remove */
+      else list[found].kind = kind;                            /* different kind → flip */
+    } else {
+      list.push({ a: x, b: y, kind });
+    }
+    state.kropkiFirst = -1;
+    rebuild();
+  }
+
+  /* Shared two-click pair handler for edge-based marks (compare / XV).
+     `opts`:
+       - firstKey:  state field storing the first-clicked cell
+       - kindKey:   state field storing the current kind selector
+       - listKey:   puzzle field holding the list of {a,b,kind}
+       - directed:  true if (a,b) and (b,a) are semantically different (compare)
+       - onFlipKind:function(existing, kind) → 'keep'|'replace'|'remove'
+     Returns nothing; mutates state and rebuilds. */
+  function handleEdgePairClick(i, listKey, firstKey, kindKey, directed, redraw) {
+    if (state[firstKey] === -1) { state[firstKey] = i; rebuild(); return; }
+    if (state[firstKey] === i)  { state[firstKey] = -1; rebuild(); return; }
+    const N = state.puzzle.N;
+    const a0 = state[firstKey], b0 = i;
+    const dr = Math.abs(((a0 / N) | 0) - ((b0 / N) | 0));
+    const dc = Math.abs((a0 % N) - (b0 % N));
+    if (dr + dc !== 1) { state[firstKey] = i; rebuild(); return; }
+    const list = state.puzzle[listKey];
+    const kind = state[kindKey];
+    let a = a0, b = b0, useKind = kind;
+    if (!directed) {                                   /* canonical ordering for unordered pairs */
+      if (a > b) { [a, b] = [b, a]; }
+    }
+    const found = directed
+      ? list.findIndex(d => (d.a === a && d.b === b) || (d.a === b && d.b === a))
+      : list.findIndex(d => d.a === a && d.b === b);
+    if (found >= 0) {
+      const cur = list[found];
+      const same = directed
+        ? (cur.a === a && cur.b === b && cur.kind === kind)
+        : (cur.kind === kind);
+      if (same) list.splice(found, 1);
+      else { cur.a = a; cur.b = b; cur.kind = useKind; }
+    } else {
+      list.push({ a, b, kind: useKind });
+    }
+    state[firstKey] = -1;
+    rebuild();
+  }
+
+  function handleCompareClick(i) { handleEdgePairClick(i, 'compare', 'compareFirst', 'compareKind', true); }
+  function handleXVClick(i)      { handleEdgePairClick(i, 'xv',      'xvFirst',      'xvKind',      false); }
+
+  /* Spectradoku brush: assign the currently-selected color to a cell.
+     Clicking a cell that already holds the same color clears it. Live-updates
+     the cell's tint without a full rebuild. */
+  function paintRainbowLight(i) {
+    const p = state.puzzle;
+    const pick = state.rainbowPick;
+    const next = (p.rainbow[i] === pick) ? 0 : pick;
+    if (p.rainbow[i] === next) return;
+    p.rainbow[i] = next;
+    const cell = state.dom.cells[i];
+    if (cell) {
+      if (next) cell.style.setProperty('--rainbow-bg', spectraColor(next - 1));
+      else cell.style.removeProperty('--rainbow-bg');
+      cell.classList.toggle('rainbow-tinted', !!next);
+    }
+    fillToolPanel();
+  }
+
+  /* Parity brush: apply the currently-selected parity kind. Clicking (or
+     dragging onto) a cell already carrying that same kind clears it. */
+  function paintParityLight(i) {
+    const p = state.puzzle;
+    const kind = state.parityKind;
+    const cur = p.parity[i];
+    const next = (cur === kind) ? 0 : kind;
+    if (cur === next) return;
+    p.parity[i] = next;
+    drawParity();
+  }
+
+  /* ---------- URL-hash persistence (compact, human-readable-ish) ---------- */
+  function saveToHash() {
+    try {
+      const json = Core.serialize(state.puzzle);
+      const b64 = btoa(unescape(encodeURIComponent(json)))
+        .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+      history.replaceState(null, '', '#p=' + b64);
+    } catch (e) { /* localStorage / history may fail in file://, non-fatal. */ }
+  }
+  function loadFromHash() {
+    try {
+      const m = /#p=([A-Za-z0-9_-]+)/.exec(location.hash);
+      if (!m) return null;
+      const b64 = m[1].replace(/-/g, '+').replace(/_/g, '/');
+      const json = decodeURIComponent(escape(atob(b64)));
+      return Core.deserialize(json);
+    } catch (e) { return null; }
+  }
+
+  /* ---------- Analyze (conflicts + optional solve) ---------- */
+  function analyze() {
+    state.solutionIdx = 0;
+    state.solutions = [];
+    state.reachedCap = false;
+    saveToHash();
+
+    /* Clear placeholders + errors. */
+    state.dom.cells.forEach(c => { c.classList.remove('error'); c.placeholder = ''; c.classList.remove('hint-only'); });
+
+    const conflicts = Core.findConflicts(state.puzzle);
+    if (conflicts.size > 0) {
+      conflicts.forEach(i => state.dom.cells[i].classList.add('error'));
+      setStatus(L({ en: `Conflict: ${conflicts.size} cells clash.`,
+                    zh: `冲突：${conflicts.size} 个单元格重复。` }), 'err');
+      updateNav();
+      return;
+    }
+
+    if (!state.liveSolve) {
+      setStatus(L({ en: 'Live solve off — press Solve to compute.',
+                    zh: '实时求解关闭 — 按"求解"计算。' }));
+      updateNav();
+      return;
+    }
+
+    /* Skip solving an entirely empty puzzle — too many solutions to enumerate
+       usefully. Ask for at least one clue or one variant constraint. */
+    const hasGivens = Array.prototype.some.call(state.puzzle.values, v => !!v);
+    const p = state.puzzle;
+    const anyEdge = (obj) => ['top','bottom','left','right']
+      .some(s => Array.prototype.some.call(obj[s], v => !!v));
+    const hasVariant = p.cages.length || p.thermos.length ||
+      (p.whispers && p.whispers.length) ||
+      (p.regionSums && p.regionSums.length) ||
+      (p.modulars && p.modulars.length) ||
+      (p.renbans && p.renbans.length) ||
+      (p.palindromes && p.palindromes.length) ||
+      (p.entropics && p.entropics.length) ||
+      (p.parityLines && p.parityLines.length) ||
+      (p.arrows && p.arrows.length) ||
+      (p.quadruples && p.quadruples.length) ||
+      (p.kropki && p.kropki.length) ||
+      (p.compare && p.compare.length) ||
+      (p.xv && p.xv.length) ||
+      (p.parity && Array.prototype.some.call(p.parity, v => !!v)) ||
+      (p.rainbow && Array.prototype.some.call(p.rainbow, v => !!v)) ||
+      p.flags.diagonal || p.flags.antiKnight || p.flags.antiKing || p.flags.antiConsecutive ||
+      hasCustomRegions() ||
+      anyEdge(p.sky) || anyEdge(p.sandwich);
+    if (!hasGivens && !hasVariant) {
+      setStatus(L({ en: 'Add a given digit or a constraint to solve.',
+                    zh: '请输入至少一个已知数字或添加一个约束。' }));
+      updateNav();
+      return;
+    }
+    runSolver(true);
+  }
+
+  /* --- Solver background thread ---------------------------------------
+     The solver runs inside solver-worker.js so heavy solves don't freeze
+     the UI. `solver` is a lazily-created singleton Worker. Every solve
+     request gets a monotonically-increasing id; the response is ignored
+     unless it matches the latest id (so stale results from superseded
+     requests never overwrite the current view).
+
+     Cancellation: Web Workers are single-threaded and can't be preempted
+     mid-JS-turn. If a new request arrives while an old one is still
+     grinding, we terminate the worker and spawn a new one — that's the
+     only way to actually stop a runaway solve. When the worker is idle
+     between requests, we keep it warm and just post the new message. */
+  let solver = null;
+  let solverBusy = false;
+  let solverReqId = 0;
+  let solverActiveId = 0;
+
+  function spawnSolver() {
+    solver = new Worker('solver-worker.js');
+    solver.onmessage = onSolverMessage;
+    solver.onerror   = e => {
+      /* Worker crashed — surface it, then let the next request lazily
+         respawn. Don't try to recover this specific solve. */
+      console.error('solver-worker error', e);
+      solverBusy = false;
+      solver = null;
+      setStatus(L({ en: 'Solver crashed — please try again.',
+                    zh: '求解器崩溃 — 请再试一次。' }), 'err');
+    };
+  }
+
+  function postSolve(triggeredByLive) {
+    /* If a solve is already running, kill the worker so its result
+       never lands. The freshly-spawned worker then gets our new task. */
+    if (solverBusy && solver) {
+      solver.terminate();
+      solver = null;
+      solverBusy = false;
+    }
+    if (!solver) spawnSolver();
+    const id = ++solverReqId;
+    solverActiveId = id;
+    solverBusy = true;
+    state.pendingLive = !!triggeredByLive;
+    state.pendingStart = performance.now();
+    setStatus(L({ en: 'Solving…', zh: '求解中…' }));
+    /* structured clone handles TypedArrays and plain objects natively,
+       so we can post the puzzle as-is; the worker gets its own copy. */
+    solver.postMessage({ id, puzzle: state.puzzle });
+  }
+
+  function onSolverMessage(e) {
+    const data = e.data;
+    if (data.id !== solverActiveId) return;   /* stale response, ignore */
+    solverBusy = false;
+    if (data.error) {
+      setStatus(L({ en: 'Solver error — see console.',
+                    zh: '求解器出错 — 详见控制台。' }), 'err');
+      console.error('solver-worker:', data.error);
+      return;
+    }
+    if (data.invalidRegions) {
+      setStatus(L({ en: 'Regions are incomplete — every region needs exactly N cells.',
+                    zh: '宫格不完整 — 每个宫格必须恰好包含 N 格。' }), 'err');
+      return;
+    }
+    state.solutions = data.solutions;
+    state.reachedCap = data.reachedCap;
+    state.solutionIdx = 0;
+    renderSolution(data.dt);
+    updateNav();
+  }
+
+  function runSolver(triggeredByLive) {
+    /* Kept as the single entry point so both live-solve (analyze) and the
+       manual "Solve" button reach the worker the same way. */
+    postSolve(triggeredByLive);
+  }
+
+  function renderSolution(elapsedMs) {
+    const { values, rainbow } = state.puzzle;
+    /* Clear any previous derived Spectradoku tint from prior solves — user
+       painted colors carry a `.rainbow-tinted` class from buildCells and
+       are left alone; only cells with rainbow[i] === 0 may have gained the
+       class as a solver hint, and those need to be reset before applying
+       (or omitting) the new solution's colors. */
+    state.dom.cells.forEach((c, i) => {
+      c.placeholder = '';
+      c.classList.remove('hint-only');
+      if (rainbow && !rainbow[i]) {
+        c.classList.remove('rainbow-tinted', 'rainbow-derived');
+        c.style.removeProperty('--rainbow-bg');
+      }
+    });
+
+    if (state.solutions.length === 0) {
+      setStatus(L({ en: 'No solution.', zh: '无解。' }), 'err');
+      return;
+    }
+    const sol = state.solutions[state.solutionIdx];
+    const solValues = sol.values;
+    const solColors = sol.colors;   /* Int8Array when Spectradoku is active, else null */
+    state.dom.cells.forEach((c, i) => {
+      if (!values[i]) { c.placeholder = digitToChar(solValues[i]); c.classList.add('hint-only'); }
+      /* Spectradoku: paint the derived color on cells the user didn't paint,
+         so every cell in the shown solution carries both digit and color. */
+      if (solColors && rainbow && !rainbow[i]) {
+        const co = solColors[i];
+        if (co) {
+          c.style.setProperty('--rainbow-bg', spectraColor(co - 1));
+          c.classList.add('rainbow-tinted', 'rainbow-derived');
+        }
+      }
+    });
+    const total = state.solutions.length;
+    const totalLabel = state.reachedCap ? '200+' : String(total);
+    if (total === 1) {
+      setStatus(L({ en: `1 solution (${elapsedMs} ms).`,
+                    zh: `1 种解（${elapsedMs} ms）。` }), 'ok');
+    } else {
+      setStatus(L({
+        en: `Solution ${state.solutionIdx + 1} of ${totalLabel} (${elapsedMs} ms).`,
+        zh: `第 ${state.solutionIdx + 1} / ${totalLabel} 种解（${elapsedMs} ms）。`,
+      }));
+    }
+  }
+
+  function setStatus(text, kind) {
+    const s = state.dom.status;
+    s.textContent = text;
+    s.className = 'solver-status' + (kind ? ' ' + kind : '');
+  }
+  function updateNav() {
+    const many = state.solutions.length > 1;
+    state.dom.prevBtn.disabled = !many || state.solutionIdx <= 0;
+    state.dom.nextBtn.disabled = !many || state.solutionIdx >= state.solutions.length - 1;
+  }
+
+  /* ---------- Rebuild helpers ---------- */
+  function rebuild() {
+    render(state.container);
+  }
+  function rebuildToolUI() {
+    /* Tab bar visual state */
+    Object.keys(state.dom.tabs || {}).forEach(k => {
+      state.dom.tabs[k].classList.toggle('active', k === state.tool);
+    });
+    fillToolPanel();
+    /* Re-render just the grid so cage/thermo highlights + sky-edit borders update. */
+    const grid = state.dom.grid;
+    grid.innerHTML = '';
+    buildCells(grid);
+    /* Sky cells need editable/filled class recalculated → rebuild frame. */
+    const parent = state.dom.frame.parentElement;
+    parent.removeChild(state.dom.frame);
+    buildGridFrame(parent);
+    analyze();
+  }
+
+  let globalMouseUpAttached = false;
+  function attachGlobalMouseUp() {
+    if (globalMouseUpAttached) return;
+    globalMouseUpAttached = true;
+    const endAll = () => {
+      if (!state) return;
+      if (state.cageDrag) endCageDrag();
+      if (state.regionDrag) { state.regionDrag = false; analyze(); }
+      if (state.rainbowDrag) { state.rainbowDrag = false; analyze(); }
+      if (state.pathDrag)   { state.pathDrag = false; analyze(); }
+      if (state.parityDrag) { state.parityDrag = false; analyze(); }
+    };
+    document.addEventListener('mouseup', endAll);
+    document.addEventListener('mouseleave', endAll);
+  }
+
+  /* ---------- Top-level render ---------- */
+  function render(container) {
+    if (!state || state.container !== container) {
+      state = makeState(container);
+      const loaded = loadFromHash();
+      if (loaded) state.puzzle = loaded;
+    }
+    container.innerHTML = '';
+    state.dom = {};
+    attachGlobalMouseUp();
+
+    buildSizeControls(container);
+    buildFlagRow(container);
+    buildToolTabs(container);
+    buildToolPanel(container);
+    buildGridFrame(container);
+
+    const status = el('p', 'solver-status');
+    state.dom.status = status;
+    container.appendChild(status);
+
+    const actionsWrap = el('div', 'solver-actions-wrap');
+    const solveRow = el('div', 'solver-actions');
+    const manageRow = el('div', 'solver-actions');
+    state.dom.prevBtn = btn(T.prev, {
+      secondary: true,
+      onClick: () => { if (state.solutionIdx > 0) { state.solutionIdx--; renderSolution(0); updateNav(); } },
+    });
+    state.dom.nextBtn = btn(T.next, {
+      secondary: true,
+      onClick: () => { if (state.solutionIdx < state.solutions.length - 1) { state.solutionIdx++; renderSolution(0); updateNav(); } },
+    });
+    const solveBtn = btn(T.solve, { onClick: runSolver });
+    const liveChip = el('button', 'flag-chip' + (state.liveSolve ? ' active' : ''));
+    liveChip._label = T.live;
+    liveChip.textContent = L(T.live);
+    liveChip.title = L({
+      en: 'Live solve reruns the solver on every edit. Complex puzzles can hang the page — it will auto-disable if a run takes too long.',
+      zh: '实时求解会在每次编辑后自动求解。复杂谜题会严重卡顿页面 — 若单次求解耗时过长将自动关闭。',
+    });
+    liveChip.addEventListener('click', () => {
+      state.liveSolve = !state.liveSolve;
+      liveChip.classList.toggle('active', state.liveSolve);
+      analyze();
+    });
+    state.dom.liveChip = liveChip;
+    const resetBtn = btn(T.reset, {
+      secondary: true,
+      onClick: () => {
+        state.puzzle.values.fill(0);
+        state.puzzle.given.fill(0);
+        rebuild();
+      },
+    });
+    const exampleBtn = btn(T.example, {
+      secondary: true,
+      onClick: loadExample,
+    });
+    const wipeBtn = btn(T.wipe, {
+      secondary: true,
+      onClick: () => {
+        const p = state.puzzle;
+        state.puzzle = Core.newPuzzle(p.N, p.boxR, p.boxC);
+        state.cageDraft = { cells: [], sum: '' };
+        state.thermoDraft = { cells: [] };
+        state.lineDraft = { cells: [] };
+        state.arrowDraft = { phase: 0, base: [], path: [] };
+        state.quadDraft = { digits: '' };
+        state.kropkiFirst = -1;
+        state.compareFirst = -1;
+        state.xvFirst = -1;
+        rebuild();
+      },
+    });
+    const shareBtn = btn({ en: 'Copy link', zh: '复制链接' }, {
+      secondary: true,
+      onClick: () => {
+        saveToHash();
+        const url = location.href;
+        try {
+          navigator.clipboard.writeText(url);
+          setStatus(L({ en: 'Link copied.', zh: '链接已复制。' }), 'ok');
+        } catch (e) {
+          setStatus(L({ en: 'Link is in the address bar.', zh: '链接在地址栏中。' }));
+        }
+      },
+    });
+    solveRow.append(solveBtn, state.dom.prevBtn, state.dom.nextBtn, liveChip);
+    manageRow.append(resetBtn, exampleBtn, shareBtn, wipeBtn);
+    actionsWrap.append(solveRow, manageRow);
+    container.appendChild(actionsWrap);
+
+    analyze();
+  }
+
+  function loadExample() {
+    const N = state.puzzle.N;
+    const ex = EXAMPLES[N];
+    if (!ex) {
+      setStatus(L({ en: `No example for ${N}×${N}.`, zh: `${N}×${N} 无示例。` }), 'err');
+      return;
+    }
+    state.puzzle.values.fill(0);
+    state.puzzle.given.fill(0);
+    for (let i = 0; i < N * N; i++) {
+      if (ex[i]) {
+        state.puzzle.values[i] = ex[i];
+        state.puzzle.given[i] = 1;
+      }
+    }
+    rebuild();
+  }
+
+  return { name: NAME, description: DESCRIPTION, render };
+})();
