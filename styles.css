@@ -761,3 +761,88 @@ section {
 }
 .flag-chip:hover { color: var(--text); border-color: var(--accent); }
 .flag-chip.active { background: var(--accent); color: white; border-color: var(--accent); }
+.flag-chip:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+/* Little Killer diagonal arrows (drawn outside the grid perimeter). */
+.lk-svg { position: absolute; top: 0; left: 0; pointer-events: none; overflow: visible; }
+.lk-svg .lk-arrow { pointer-events: auto; cursor: pointer; }
+.lk-svg .lk-arrow line {
+  stroke: var(--text);
+  fill: none;
+  stroke-linecap: round;
+}
+.lk-svg .lk-arrow .head {
+  fill: var(--text);
+  stroke: none;
+}
+.lk-svg .lk-arrow .lk-sum {
+  fill: var(--text);
+  font-family: "SF Mono", "Consolas", monospace;
+  font-weight: 700;
+  paint-order: stroke;
+  stroke: var(--surface);
+  stroke-width: 3;
+  stroke-linejoin: round;
+}
+.lk-svg .lk-arrow:hover line   { stroke: var(--accent); }
+.lk-svg .lk-arrow:hover .head  { fill:   var(--accent); }
+.lk-svg .lk-arrow:hover .lk-sum{ fill:   var(--accent); }
+
+/* Empty outer-edge spacer used when the frame reserves space for
+   Little Killer arrows but no per-cell input is needed. */
+.sudoku-frame .lk-edge {
+  width: var(--cell-size, 40px);
+  height: var(--cell-size, 40px);
+  padding: 0;
+  margin: 0;
+}
+
+/* Hitpoint per-cell arrows. */
+.hp-svg { position: absolute; top: 0; left: 0; pointer-events: none; overflow: visible; }
+.hp-svg .hp-shaft {
+  stroke: var(--accent);
+  fill: none;
+  stroke-linecap: round;
+}
+.hp-svg .hp-head { fill: var(--accent); stroke: none; }
+
+/* Column / Row index cell tints — visible in every tool so the constraint
+   is discoverable outside the editor. */
+.sudoku-cell.col-index {
+  background-image: linear-gradient(135deg,
+    color-mix(in oklab, var(--accent) 15%, transparent) 0 8px,
+    transparent 8px 100%);
+}
+.sudoku-cell.row-index {
+  background-image: linear-gradient(315deg,
+    color-mix(in oklab, #f97316 25%, transparent) 0 8px,
+    transparent 8px 100%);
+}
+/* When a cell has BOTH marks, layer the tints so both corners are visible. */
+.sudoku-cell.col-index.row-index {
+  background-image:
+    linear-gradient(135deg, color-mix(in oklab, var(--accent) 15%, transparent) 0 8px, transparent 8px 100%),
+    linear-gradient(315deg, color-mix(in oklab, #f97316 25%, transparent) 0 8px, transparent 8px 100%);
+}
+
+/* Pencilmark analysis overlay. */
+.pm-svg { position: absolute; top: 0; left: 0; pointer-events: none; overflow: visible; }
+.pm-svg .pm-digit {
+  fill: var(--accent);
+  font-family: "SF Mono", "Consolas", monospace;
+  font-weight: 600;
+}
+/* When a cell's pencilmark analysis collapses to a single digit, the
+   placeholder is set to that digit and rendered green. */
+.sudoku-cell.pm-confirmed::placeholder {
+  color: var(--success);
+  opacity: 0.95;
+  font-weight: 700;
+}
+.sudoku-cell.pm-confirmed {
+  background-color: color-mix(in oklab, var(--success) 12%, var(--surface));
+}

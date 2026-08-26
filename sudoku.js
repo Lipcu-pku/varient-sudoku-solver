@@ -95,6 +95,10 @@ window.SudokuApp = (function () {
       compare:   { en: 'Compare',      zh: '大小符' },
       xv:        { en: 'XV',           zh: 'XV' },
       parity:    { en: 'Odd/Even',     zh: '奇偶' },
+      littleKiller:{ en: 'Little Killer', zh: '小杀手' },
+      colIndex:  { en: 'Column Index', zh: '列索引' },
+      rowIndex:  { en: 'Row Index',    zh: '行索引' },
+      hitpoint:  { en: 'Hitpoint',     zh: '命中箭头' },
     },
     flag: {
       diagonal:        { en: 'X (diagonals)',     zh: 'X（对角）' },
@@ -143,10 +147,27 @@ window.SudokuApp = (function () {
                   zh: '选择 X（和为 10）或 V（和为 5），然后点击两个正交相邻的格子在其边上放置/移除标记。' },
       parity:   { en: 'Pick Odd (circle) or Even (square), then click or drag across cells to mark them. Click a marked cell with the same tool to clear.',
                   zh: '选择"奇"（圆圈）或"偶"（方块），然后点击或拖动格子标记；对已相同标记的格再次点击可清除。' },
+      littleKiller: {
+        en: 'Pick a side + position + diagonal direction and a sum, then Add. The digits along that diagonal (from the entry cell to the far edge) must sum to the given value. Click any existing arrow to delete.',
+        zh: '选择边、位置、对角方向和总和后按"添加"。从入格开始沿对角线到远端的所有数字之和等于该值。点击已有箭头可删除。',
+      },
+      colIndex: {
+        en: 'Click or drag over cells to mark them. In a marked cell at (X, Y): if the digit is Z, then row X column Z must equal Y.',
+        zh: '点击或拖动格子标记。若已标记格 (X, Y) 中的数字为 Z，则第 X 行第 Z 列必须等于 Y。',
+      },
+      rowIndex: {
+        en: 'Click or drag over cells to mark them. In a marked cell at (X, Y): if the digit is Z, then row Z column Y must equal X.',
+        zh: '点击或拖动格子标记。若已标记格 (X, Y) 中的数字为 Z，则第 Z 行第 Y 列必须等于 X。',
+      },
+      hitpoint: {
+        en: 'Pick one of the 8 compass directions, then click a cell to toggle that arrow on it. A cell may have multiple arrows. The cell\'s digit equals the sum over each arrow direction of downstream cells whose value V equals its distance k from the arrow cell.',
+        zh: '先选择 8 方向中的一个，再点击格子切换该方向的箭头。同一格可有多个方向。该格数字 D 等于：对每个方向沿该方向前进，若第 k 格数字 V 等于 k，则将 V 计入总和；总和等于 D。',
+      },
     },
     solve:   { en: 'Solve',           zh: '求解' },
     prev:    { en: '◀ Previous',      zh: '◀ 上一解' },
     next:    { en: 'Next ▶',          zh: '下一解 ▶' },
+    pencil:  { en: 'Pencilmarks',     zh: '候选数' },
     reset:   { en: 'Clear digits',    zh: '清空数字' },
     example: { en: 'Load example',    zh: '载入示例' },
     wipe:    { en: 'Clear all',       zh: '全部清除' },
@@ -238,6 +259,16 @@ window.SudokuApp = (function () {
       parityDrag: false,
       regionDrag: false,
       pathDrag: false,
+      /* Little Killer draft: form-driven placement. */
+      lkDraft: { side: 'top', idx: 0, dir: 'dr', sum: '' },
+      /* Column/Row index paint tools share a drag flag with regionDrag. */
+      colIndexDrag: false,
+      rowIndexDrag: false,
+      /* Hitpoint tool: which direction to toggle when a cell is clicked. */
+      hitpointDir: 3,   /* SE by default */
+      /* Pencilmark analysis */
+      pencilmarkOn: false,
+      pencilmarkStats: null,   /* { freq: Uint16Array(N*N*(N+1)), maxPerCell: Uint16Array(N*N) } */
       /* Drag state for cage painting. */
       cageDrag: null,    /* null | { mode: 'add' | 'remove' } */
       hoverCageIdx: -1,
@@ -288,6 +319,9 @@ window.SudokuApp = (function () {
         state.compareFirst = -1;
         state.xvFirst = -1;
         state.rainbowPick = 1;
+        state.lkDraft = { side: 'top', idx: 0, dir: 'dr', sum: '' };
+        state.pencilmarkOn = false;
+        state.pencilmarkStats = null;
         rebuild();
       });
       btns[p.label] = b;
@@ -329,6 +363,9 @@ window.SudokuApp = (function () {
         state.compareFirst = -1;
         state.xvFirst = -1;
         state.rainbowPick = 1;
+        state.lkDraft = { side: 'top', idx: 0, dir: 'dr', sum: '' };
+        state.pencilmarkOn = false;
+        state.pencilmarkStats = null;
         rebuild();
       },
     });
@@ -369,11 +406,11 @@ window.SudokuApp = (function () {
   const TOOL_GROUPS = [
     { label: { en: 'Basic',      zh: '基础'   }, tools: ['digit', 'region', 'rainbow', 'cage'] },
     { label: { en: 'Lines',      zh: '线约束' }, tools: ['thermo', 'whisper', 'regionSum', 'modular', 'renban', 'palindrome', 'entropic', 'parityLine'] },
-    { label: { en: 'Arrows',     zh: '箭头'   }, tools: ['arrow'] },
-    { label: { en: 'Edge clues', zh: '外圈线索' }, tools: ['sky', 'sandwich'] },
+    { label: { en: 'Arrows',     zh: '箭头'   }, tools: ['arrow', 'hitpoint'] },
+    { label: { en: 'Edge clues', zh: '外圈线索' }, tools: ['sky', 'sandwich', 'littleKiller'] },
     { label: { en: 'Edge marks', zh: '边标记' }, tools: ['kropki', 'compare', 'xv'] },
     { label: { en: 'Point marks',zh: '点标记' }, tools: ['quadruple'] },
-    { label: { en: 'Cell marks', zh: '格子标记' }, tools: ['parity'] },
+    { label: { en: 'Cell marks', zh: '格子标记' }, tools: ['parity', 'colIndex', 'rowIndex'] },
   ];
 
   function buildToolTabs(host) {
@@ -430,6 +467,10 @@ window.SudokuApp = (function () {
     if (state.tool === 'compare')   fillComparePanel(p);
     if (state.tool === 'xv')        fillXVPanel(p);
     if (state.tool === 'parity')    fillParityPanel(p);
+    if (state.tool === 'littleKiller') fillLittleKillerPanel(p);
+    if (state.tool === 'colIndex')  fillColIndexPanel(p);
+    if (state.tool === 'rowIndex')  fillRowIndexPanel(p);
+    if (state.tool === 'hitpoint')  fillHitpointPanel(p);
   }
 
   /* Shared: a chip button with a swatch element for pair/parity pickers. */
@@ -713,6 +754,191 @@ window.SudokuApp = (function () {
     return true;
   }
 
+  /* ---------- Little Killer tool ---------- */
+  const LK_SIDES = [
+    { key: 'top',    en: 'Top',    zh: '顶' },
+    { key: 'bottom', en: 'Bottom', zh: '底' },
+    { key: 'left',   en: 'Left',   zh: '左' },
+    { key: 'right',  en: 'Right',  zh: '右' },
+  ];
+  const LK_DIRS = [
+    { key: 'dr', glyph: '↘', en: 'Down-Right', zh: '右下' },
+    { key: 'dl', glyph: '↙', en: 'Down-Left',  zh: '左下' },
+    { key: 'ur', glyph: '↗', en: 'Up-Right',   zh: '右上' },
+    { key: 'ul', glyph: '↖', en: 'Up-Left',    zh: '左上' },
+  ];
+  /* Directions that go INTO the grid from each side. Corners restrict this
+     further — enforced by the diagonal-cells emptiness check at add time. */
+  const LK_VALID_DIRS = {
+    top:    ['dr', 'dl'],
+    bottom: ['ur', 'ul'],
+    left:   ['dr', 'ur'],
+    right:  ['dl', 'ul'],
+  };
+
+  function lkDiagCells(side, idx, dir, N) {
+    if (!self.LittleKillerHelpers) return [];
+    return self.LittleKillerHelpers.diagCells(side, idx, dir, N);
+  }
+
+  function fillLittleKillerPanel(p) {
+    const N = state.puzzle.N;
+    const d = state.lkDraft;
+    /* Coerce dir if it doesn't belong to the current side. */
+    const validDirs = LK_VALID_DIRS[d.side];
+    if (!validDirs.includes(d.dir)) d.dir = validDirs[0];
+
+    p.appendChild(el('span', null, L({ en: 'Side', zh: '边' }) + ':'));
+    LK_SIDES.forEach(s => {
+      const chip = el('button', 'chip' + (d.side === s.key ? ' active' : ''));
+      chip.textContent = L({ en: s.en, zh: s.zh });
+      chip.addEventListener('click', () => {
+        d.side = s.key;
+        d.dir = LK_VALID_DIRS[s.key][0];
+        fillToolPanel();
+      });
+      p.appendChild(chip);
+    });
+
+    p.appendChild(el('span', null, L({ en: 'Pos', zh: '位置' }) + ':'));
+    const posIn = el('input');
+    posIn.type = 'number'; posIn.min = 1; posIn.max = N;
+    posIn.value = String((d.idx | 0) + 1);
+    posIn.style.width = '4rem';
+    posIn.addEventListener('input', () => {
+      const n = Number(posIn.value) | 0;
+      if (n >= 1 && n <= N) d.idx = n - 1;
+    });
+    p.appendChild(posIn);
+
+    p.appendChild(el('span', null, L({ en: 'Dir', zh: '方向' }) + ':'));
+    LK_DIRS.forEach(dir => {
+      const enabled = validDirs.includes(dir.key);
+      const chip = el('button', 'chip' + (d.dir === dir.key ? ' active' : ''));
+      chip.textContent = dir.glyph;
+      chip.title = L({ en: dir.en, zh: dir.zh });
+      chip.disabled = !enabled;
+      if (!enabled) chip.style.opacity = '0.3';
+      chip.addEventListener('click', () => {
+        if (!enabled) return;
+        d.dir = dir.key;
+        fillToolPanel();
+      });
+      p.appendChild(chip);
+    });
+
+    p.appendChild(el('span', null, L(T.sumLbl) + ':'));
+    const sumIn = el('input');
+    sumIn.type = 'number'; sumIn.min = 1;
+    sumIn.value = d.sum;
+    sumIn.placeholder = '—';
+    sumIn.style.width = '5rem';
+    sumIn.addEventListener('input', () => { d.sum = sumIn.value; });
+    p.appendChild(sumIn);
+
+    p.appendChild(btn({ en: 'Add', zh: '添加' }, {
+      onClick: () => {
+        const sum = Number(d.sum);
+        if (!Number.isFinite(sum) || sum <= 0) return;
+        const cells = lkDiagCells(d.side, d.idx, d.dir, N);
+        if (!cells.length) return;
+        state.puzzle.littleKillers.push({
+          side: d.side, idx: d.idx | 0, dir: d.dir, sum,
+        });
+        d.sum = '';
+        rebuild();
+      },
+    }));
+
+    const list = state.puzzle.littleKillers || [];
+    p.appendChild(el('span', null,
+      L({ en: `Arrows: ${list.length}`, zh: `箭头数：${list.length}` })));
+    if (list.length) {
+      p.appendChild(btn({ en: 'Delete last', zh: '删除最后' }, {
+        secondary: true,
+        onClick: () => { list.pop(); rebuild(); },
+      }));
+      p.appendChild(btn({ en: 'Clear all', zh: '清空全部' }, {
+        secondary: true,
+        onClick: () => { state.puzzle.littleKillers = []; rebuild(); },
+      }));
+    }
+  }
+
+  /* ---------- Column / Row Index tools ---------- */
+  function fillIndexPanelShared(p, arrayKey, labelObj) {
+    const N = state.puzzle.N;
+    const arr = state.puzzle[arrayKey] || new Int8Array(N * N);
+    let total = 0;
+    for (let i = 0; i < arr.length; i++) if (arr[i]) total++;
+    p.appendChild(el('span', null,
+      L({ en: `Marked: ${total}`, zh: `已标记：${total}` })));
+    p.appendChild(btn({ en: 'Select all', zh: '全选' }, {
+      onClick: () => {
+        for (let i = 0; i < arr.length; i++) arr[i] = 1;
+        rebuild();
+      },
+    }));
+    if (total) {
+      p.appendChild(btn({ en: 'Clear all', zh: '清空全部' }, {
+        secondary: true,
+        onClick: () => { arr.fill(0); rebuild(); },
+      }));
+    }
+  }
+  function fillColIndexPanel(p) { fillIndexPanelShared(p, 'colIndex'); }
+  function fillRowIndexPanel(p) { fillIndexPanelShared(p, 'rowIndex'); }
+
+  /* ---------- Hitpoint Arrow tool ---------- */
+  const HITPOINT_DIRS = [
+    { bit: 0, glyph: '↑',  en: 'N',  zh: '北' },
+    { bit: 1, glyph: '↗',  en: 'NE', zh: '东北' },
+    { bit: 2, glyph: '→',  en: 'E',  zh: '东' },
+    { bit: 3, glyph: '↘',  en: 'SE', zh: '东南' },
+    { bit: 4, glyph: '↓',  en: 'S',  zh: '南' },
+    { bit: 5, glyph: '↙',  en: 'SW', zh: '西南' },
+    { bit: 6, glyph: '←',  en: 'W',  zh: '西' },
+    { bit: 7, glyph: '↖',  en: 'NW', zh: '西北' },
+  ];
+
+  function fillHitpointPanel(p) {
+    p.appendChild(el('span', null, L({ en: 'Direction', zh: '方向' }) + ':'));
+    HITPOINT_DIRS.forEach(dr => {
+      const chip = el('button', 'chip' + (state.hitpointDir === dr.bit ? ' active' : ''));
+      chip.textContent = dr.glyph;
+      chip.title = L({ en: dr.en, zh: dr.zh });
+      chip.addEventListener('click', () => {
+        state.hitpointDir = dr.bit;
+        fillToolPanel();
+      });
+      p.appendChild(chip);
+    });
+    const list = state.puzzle.hitpoints || [];
+    p.appendChild(el('span', null,
+      L({ en: `Cells: ${list.length}`, zh: `格子数：${list.length}` })));
+    if (list.length) {
+      p.appendChild(btn({ en: 'Clear all', zh: '清空全部' }, {
+        secondary: true,
+        onClick: () => { state.puzzle.hitpoints = []; rebuild(); },
+      }));
+    }
+  }
+
+  function handleHitpointClick(i) {
+    const bit = state.hitpointDir;
+    const mb = 1 << bit;
+    const list = state.puzzle.hitpoints;
+    const found = list.findIndex(h => h.cell === i);
+    if (found >= 0) {
+      const cur = list[found];
+      cur.dirs ^= mb;
+      if (!cur.dirs) list.splice(found, 1);
+    } else {
+      list.push({ cell: i, dirs: mb });
+    }
+    rebuild();
+  }
+
   function fillSkyPanel(p) {
     const sky = state.puzzle.sky;
     const total = ['top', 'bottom', 'left', 'right']
@@ -852,18 +1078,33 @@ window.SudokuApp = (function () {
   function buildGridFrame(host) {
     const { N } = state.puzzle;
     const size = cellSize(N);
-    const edgeMode = state.tool === 'sky' ? 'sky'
-                   : state.tool === 'sandwich' ? 'sandwich'
-                   : null;
+    const skyMode = state.tool === 'sky' ? 'sky'
+                  : state.tool === 'sandwich' ? 'sandwich'
+                  : null;
+    const showLK = state.tool === 'littleKiller' ||
+                  (state.puzzle.littleKillers && state.puzzle.littleKillers.length);
+    const edgeMode = skyMode || (showLK ? 'littleKiller' : null);
     const edge = edgeMode ? size : 0;
-    const makeEdge = (side, idx) =>
-      edgeMode === 'sandwich' ? makeSandwich(side, idx) : makeSky(side, idx);
+    const makeEdge = (side, idx) => {
+      if (edgeMode === 'sandwich') return makeSandwich(side, idx);
+      if (edgeMode === 'sky')      return makeSky(side, idx);
+      /* Little-killer edge slot: just a spacer; arrows sit in the overlay.
+         Top-side cells rely on explicit grid positions because the append
+         loop for the top row doesn't set them from outside. */
+      const spacer = el('div', 'lk-edge');
+      if (side === 'top') {
+        spacer.style.gridColumn = (idx + 2);
+        spacer.style.gridRow = '1';
+      }
+      return spacer;
+    };
     const frame = el('div', 'sudoku-frame');
     frame.style.setProperty('--cell-size', size + 'px');
     frame.style.gridTemplateColumns = `${edge}px repeat(${N}, ${size}px) ${edge}px`;
     frame.style.gridTemplateRows    = `${edge}px repeat(${N}, ${size}px) ${edge}px`;
     state.dom.frame = frame;
     state.dom.cellSize = size;
+    state.dom.hasEdge = !!edgeMode;
 
     if (edgeMode) {
       /* Top edge: corner + N top clues + corner */
@@ -1051,6 +1292,18 @@ window.SudokuApp = (function () {
 
     /* Odd/Even parity cell backgrounds. */
     drawParity();
+
+    /* Little Killer diagonal arrows (drawn outside the grid). */
+    drawLittleKillers();
+
+    /* Column / Row index cell marks. */
+    drawIndexCells();
+
+    /* Hitpoint per-cell arrows. */
+    drawHitpointArrows();
+
+    /* Pencilmark analysis overlay (only when pencilmarkOn). */
+    drawPencilmarks();
   }
 
   function hasCustomRegions() {
@@ -1640,6 +1893,241 @@ window.SudokuApp = (function () {
     }
   }
 
+  /* Little Killer arrows: SVG overlay attached to the grid, but each arrow
+     is drawn OUTSIDE the grid perimeter (relies on overflow: visible). Each
+     arrow is a short segment plus arrowhead pointing into the grid, with the
+     sum rendered next to the arrow's tail. */
+  function drawLittleKillers() {
+    const N = state.puzzle.N;
+    const lks = state.puzzle.littleKillers || [];
+    const size = state.dom.cellSize;
+    const total = N * size;
+    const grid = state.dom.grid;
+    grid.querySelectorAll('.lk-svg').forEach(n => n.remove());
+
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('class', 'lk-svg');
+    svg.setAttribute('width', total);
+    svg.setAttribute('height', total);
+    svg.setAttribute('viewBox', `0 0 ${total} ${total}`);
+
+    const OUT = size * 0.55;   /* distance outside grid for arrow tail */
+
+    function anchor(side, idx) {
+      /* Returns the entry-cell centre + a unit vector pointing INTO the grid
+         (opposite of the arrow's tail direction). */
+      let ax, ay, ux, uy;
+      if (side === 'top')    { ax = (idx + 0.5) * size; ay = 0;          ux = 0;  uy = 1; }
+      else if (side === 'bottom') { ax = (idx + 0.5) * size; ay = total; ux = 0;  uy = -1; }
+      else if (side === 'left')   { ax = 0; ay = (idx + 0.5) * size;     ux = 1;  uy = 0; }
+      else                        { ax = total; ay = (idx + 0.5) * size; ux = -1; uy = 0; }
+      return { ax, ay, ux, uy };
+    }
+    function dirVec(dir) {
+      /* Direction the arrow POINTS (into the grid). */
+      if (dir === 'dr') return [1, 1];
+      if (dir === 'dl') return [-1, 1];
+      if (dir === 'ur') return [1, -1];
+      return [-1, -1];
+    }
+
+    lks.forEach((lk, li) => {
+      const { ax, ay, ux, uy } = anchor(lk.side, lk.idx);
+      /* Tail anchor: OUT pixels outside the grid, in the opposite direction. */
+      const tailX = ax - ux * OUT;
+      const tailY = ay - uy * OUT;
+      /* Arrow direction (into grid). Normalize for unit vector. */
+      const [dx, dy] = dirVec(lk.dir);
+      const len = Math.hypot(dx, dy);
+      const nx = dx / len, ny = dy / len;
+      /* Segment: from tailX,tailY toward (tailX + nx*L, tailY + ny*L). */
+      const L = size * 0.5;
+      const tipX = tailX + nx * L;
+      const tipY = tailY + ny * L;
+      const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+      g.setAttribute('class', 'lk-arrow');
+      g.dataset.index = String(li);
+      /* Click on any arrow group deletes that little killer. */
+      g.addEventListener('click', () => {
+        state.puzzle.littleKillers.splice(li, 1);
+        rebuild();
+      });
+      const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+      line.setAttribute('x1', tailX);
+      line.setAttribute('y1', tailY);
+      line.setAttribute('x2', tipX);
+      line.setAttribute('y2', tipY);
+      line.setAttribute('stroke-width', Math.max(1.4, size * 0.05));
+      g.appendChild(line);
+      /* Arrowhead at tip. */
+      const H = size * 0.20, W = size * 0.12;
+      const bx = tipX - nx * H, by = tipY - ny * H;
+      const px = -ny, py = nx;
+      const p1 = [bx + px * W, by + py * W];
+      const p2 = [bx - px * W, by - py * W];
+      const head = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+      head.setAttribute('class', 'head');
+      head.setAttribute('points', `${tipX},${tipY} ${p1[0]},${p1[1]} ${p2[0]},${p2[1]}`);
+      g.appendChild(head);
+      /* Sum label near the tail. */
+      const labX = tailX - nx * (size * 0.4);
+      const labY = tailY - ny * (size * 0.4);
+      const t = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      t.setAttribute('class', 'lk-sum');
+      t.setAttribute('x', labX);
+      t.setAttribute('y', labY);
+      t.setAttribute('text-anchor', 'middle');
+      t.setAttribute('dominant-baseline', 'middle');
+      t.setAttribute('font-size', Math.max(10, size * 0.34));
+      t.textContent = String(lk.sum);
+      g.appendChild(t);
+      svg.appendChild(g);
+    });
+
+    grid.appendChild(svg);
+  }
+
+  /* Column / Row index cell marks: subtle background tint via cell classes.
+     Always visible (not just while the tool is active) so users see which
+     cells participate. */
+  function drawIndexCells() {
+    const N = state.puzzle.N;
+    const col = state.puzzle.colIndex || new Int8Array(N * N);
+    const row = state.puzzle.rowIndex || new Int8Array(N * N);
+    for (let i = 0; i < N * N; i++) {
+      const c = state.dom.cells[i]; if (!c) continue;
+      c.classList.remove('col-index', 'row-index');
+      if (col[i]) c.classList.add('col-index');
+      if (row[i]) c.classList.add('row-index');
+    }
+  }
+
+  /* Hitpoint per-cell arrows: 8 possible directions, drawn as small
+     arrowheads around the cell centre. */
+  function drawHitpointArrows() {
+    const N = state.puzzle.N;
+    const list = state.puzzle.hitpoints || [];
+    const size = state.dom.cellSize;
+    const total = N * size;
+    const grid = state.dom.grid;
+    grid.querySelectorAll('.hp-svg').forEach(n => n.remove());
+    if (!list.length) return;
+
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('class', 'hp-svg');
+    svg.setAttribute('width', total);
+    svg.setAttribute('height', total);
+    svg.setAttribute('viewBox', `0 0 ${total} ${total}`);
+
+    const DIRS = self.HitpointHelpers ? self.HitpointHelpers.DIRS : [
+      [-1,0],[-1,1],[0,1],[1,1],[1,0],[1,-1],[0,-1],[-1,-1],
+    ];
+
+    for (const hp of list) {
+      const r = (hp.cell / N) | 0, c = hp.cell % N;
+      const cx = c * size + size / 2, cy = r * size + size / 2;
+      for (let d = 0; d < 8; d++) {
+        if (!(hp.dirs & (1 << d))) continue;
+        const [dr, dc] = DIRS[d];
+        const len = Math.hypot(dr, dc);
+        const ux = dc / len, uy = dr / len;
+        /* Draw a small arrow from cell edge inward, then head at the tip
+           pointing outward (in direction (ux, uy)). */
+        const R = size * 0.42;       /* tip distance from centre */
+        const L = size * 0.24;       /* arrow length */
+        const tipX = cx + ux * R, tipY = cy + uy * R;
+        const tailX = cx + ux * (R - L), tailY = cy + uy * (R - L);
+        const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+        line.setAttribute('class', 'hp-shaft');
+        line.setAttribute('x1', tailX);
+        line.setAttribute('y1', tailY);
+        line.setAttribute('x2', tipX);
+        line.setAttribute('y2', tipY);
+        line.setAttribute('stroke-width', Math.max(1.2, size * 0.05));
+        svg.appendChild(line);
+        const H = size * 0.10, W = size * 0.07;
+        const bx = tipX - ux * H, by = tipY - uy * H;
+        const px = -uy, py = ux;
+        const p1 = [bx + px * W, by + py * W];
+        const p2 = [bx - px * W, by - py * W];
+        const head = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+        head.setAttribute('class', 'hp-head');
+        head.setAttribute('points', `${tipX},${tipY} ${p1[0]},${p1[1]} ${p2[0]},${p2[1]}`);
+        svg.appendChild(head);
+      }
+    }
+    grid.appendChild(svg);
+  }
+
+  /* Pencilmark overlay: only rendered when state.pencilmarkOn is true and
+     stats have been computed. */
+  function drawPencilmarks() {
+    const N = state.puzzle.N;
+    const size = state.dom.cellSize;
+    const total = N * size;
+    const grid = state.dom.grid;
+    grid.querySelectorAll('.pm-svg').forEach(n => n.remove());
+    /* Clear any pm-confirmed classes from cells regardless of state. */
+    state.dom.cells.forEach(c => c.classList.remove('pm-confirmed'));
+    if (!state.pencilmarkOn || !state.pencilmarkStats) return;
+
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('class', 'pm-svg');
+    svg.setAttribute('width', total);
+    svg.setAttribute('height', total);
+    svg.setAttribute('viewBox', `0 0 ${total} ${total}`);
+
+    const { freq, solCount } = state.pencilmarkStats;
+    const rowsForN = Math.ceil(Math.sqrt(N));
+    const colsForN = Math.ceil(N / rowsForN);
+
+    for (let i = 0; i < N * N; i++) {
+      if (state.puzzle.values[i]) continue;   /* givens already show */
+      const offs = i * (N + 1);
+      /* Count non-zero digits + find max freq. */
+      let distinct = 0, singleV = 0, maxF = 0;
+      for (let v = 1; v <= N; v++) {
+        const f = freq[offs + v];
+        if (f > 0) { distinct++; singleV = v; if (f > maxF) maxF = f; }
+      }
+      if (distinct === 0) continue;
+      const r = (i / N) | 0, c = i % N;
+      if (distinct === 1) {
+        /* Confirmed value across every solution — mark the cell + drop the
+           digit in as a green placeholder. */
+        const cell = state.dom.cells[i];
+        if (cell) {
+          cell.classList.add('pm-confirmed');
+          cell.placeholder = digitToChar(singleV);
+        }
+        continue;
+      }
+      /* Multi-candidate: draw each in a small grid within the cell. */
+      let slot = 0;
+      for (let v = 1; v <= N; v++) {
+        const f = freq[offs + v];
+        if (!f) { slot++; continue; }
+        const rr = (slot / colsForN) | 0, cc = slot % colsForN;
+        slot++;
+        const px = c * size + (cc + 0.5) * (size / colsForN);
+        const py = r * size + (rr + 0.5) * (size / rowsForN);
+        const t = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+        t.setAttribute('class', 'pm-digit');
+        t.setAttribute('x', px);
+        t.setAttribute('y', py);
+        t.setAttribute('text-anchor', 'middle');
+        t.setAttribute('dominant-baseline', 'central');
+        t.setAttribute('font-size', Math.max(7, size * (N > 9 ? 0.18 : 0.22)));
+        /* Frequency-weighted opacity: least frequent = 0.3, most = 1.0. */
+        const alpha = 0.3 + 0.7 * (f / (maxF || 1));
+        t.setAttribute('opacity', alpha.toFixed(2));
+        t.textContent = digitToChar(v);
+        svg.appendChild(t);
+      }
+    }
+    grid.appendChild(svg);
+  }
+
   /* ---------- Cell interaction dispatch ---------- */
   function attachCellHandlers(input, i) {
     input.addEventListener('focus', () => input.select());
@@ -1658,6 +2146,9 @@ window.SudokuApp = (function () {
       else if (state.tool === 'compare') { e.preventDefault(); handleCompareClick(i); }
       else if (state.tool === 'xv') { e.preventDefault(); handleXVClick(i); }
       else if (state.tool === 'parity') { e.preventDefault(); state.parityDrag = true; paintParityLight(i); }
+      else if (state.tool === 'colIndex') { e.preventDefault(); state.colIndexDrag = true; paintIndexLight(i, 'colIndex'); }
+      else if (state.tool === 'rowIndex') { e.preventDefault(); state.rowIndexDrag = true; paintIndexLight(i, 'rowIndex'); }
+      else if (state.tool === 'hitpoint') { e.preventDefault(); handleHitpointClick(i); }
     });
     input.addEventListener('mouseenter', () => {
       if (state.tool === 'cage' && state.cageDrag) applyCageDrag(i);
@@ -1667,6 +2158,8 @@ window.SudokuApp = (function () {
       else if (state.pathDrag && LINE_TOOLS.has(state.tool)) addLineCellLight(i);
       else if (state.tool === 'arrow' && state.pathDrag) addArrowCellLight(i);
       else if (state.tool === 'parity' && state.parityDrag) paintParityLight(i);
+      else if (state.tool === 'colIndex' && state.colIndexDrag) paintIndexLight(i, 'colIndex');
+      else if (state.tool === 'rowIndex' && state.rowIndexDrag) paintIndexLight(i, 'rowIndex');
     });
 
     input.addEventListener('keydown', e => {
@@ -1975,6 +2468,23 @@ window.SudokuApp = (function () {
     drawParity();
   }
 
+  /* Index brush: toggle marks for the column-index / row-index constraint.
+     Dragging over an already-marked cell of the same kind clears it — mirrors
+     the parity brush pattern. */
+  function paintIndexLight(i, arrayKey) {
+    const arr = state.puzzle[arrayKey];
+    if (!arr) return;
+    /* Drag semantics: the drag mode is decided on the first cell (paint or
+       clear); enter/hover then honors that mode. We stash it on state so it
+       survives across mouseenters. */
+    const dragKey = arrayKey === 'colIndex' ? '__colIndexPaint' : '__rowIndexPaint';
+    if (state[dragKey] == null) state[dragKey] = arr[i] ? 0 : 1;
+    const target = state[dragKey];
+    if (arr[i] === target) return;
+    arr[i] = target;
+    drawIndexCells();
+  }
+
   /* ---------- URL-hash persistence (compact, human-readable-ish) ---------- */
   function saveToHash() {
     try {
@@ -1999,6 +2509,12 @@ window.SudokuApp = (function () {
     state.solutionIdx = 0;
     state.solutions = [];
     state.reachedCap = false;
+    /* Any edit invalidates the previous pencilmark analysis — turn it off
+       so stale marks never reach the DOM. The button will re-enable itself
+       through updateNav once the fresh solve returns. */
+    state.pencilmarkOn = false;
+    state.pencilmarkStats = null;
+    if (state.dom.pencilBtn) state.dom.pencilBtn.classList.remove('active');
     saveToHash();
 
     /* Clear placeholders + errors. */
@@ -2041,6 +2557,10 @@ window.SudokuApp = (function () {
       (p.xv && p.xv.length) ||
       (p.parity && Array.prototype.some.call(p.parity, v => !!v)) ||
       (p.rainbow && Array.prototype.some.call(p.rainbow, v => !!v)) ||
+      (p.littleKillers && p.littleKillers.length) ||
+      (p.colIndex && Array.prototype.some.call(p.colIndex, v => !!v)) ||
+      (p.rowIndex && Array.prototype.some.call(p.rowIndex, v => !!v)) ||
+      (p.hitpoints && p.hitpoints.length) ||
       p.flags.diagonal || p.flags.antiKnight || p.flags.antiKing || p.flags.antiConsecutive ||
       hasCustomRegions() ||
       anyEdge(p.sky) || anyEdge(p.sandwich);
@@ -2155,8 +2675,12 @@ window.SudokuApp = (function () {
     const sol = state.solutions[state.solutionIdx];
     const solValues = sol.values;
     const solColors = sol.colors;   /* Int8Array when Spectradoku is active, else null */
+    /* Pencilmark mode replaces per-cell placeholders with the multi-solution
+       overlay drawn by drawPencilmarks — skip the single-solution hints
+       so the two layers don't overlap. */
+    const pm = state.pencilmarkOn;
     state.dom.cells.forEach((c, i) => {
-      if (!values[i]) { c.placeholder = digitToChar(solValues[i]); c.classList.add('hint-only'); }
+      if (!values[i] && !pm) { c.placeholder = digitToChar(solValues[i]); c.classList.add('hint-only'); }
       /* Spectradoku: paint the derived color on cells the user didn't paint,
          so every cell in the shown solution carries both digit and color. */
       if (solColors && rainbow && !rainbow[i]) {
@@ -2167,6 +2691,7 @@ window.SudokuApp = (function () {
         }
       }
     });
+    if (pm) drawPencilmarks();
     const total = state.solutions.length;
     const totalLabel = state.reachedCap ? '200+' : String(total);
     if (total === 1) {
@@ -2189,6 +2714,36 @@ window.SudokuApp = (function () {
     const many = state.solutions.length > 1;
     state.dom.prevBtn.disabled = !many || state.solutionIdx <= 0;
     state.dom.nextBtn.disabled = !many || state.solutionIdx >= state.solutions.length - 1;
+    if (state.dom.pencilBtn) {
+      const n = state.solutions.length;
+      const cap = state.reachedCap;
+      const enabled = n >= 1 && n <= 196 && !cap;
+      state.dom.pencilBtn.disabled = !enabled;
+      if (!enabled && state.pencilmarkOn) {
+        state.pencilmarkOn = false;
+        state.pencilmarkStats = null;
+        state.dom.pencilBtn.classList.remove('active');
+      }
+    }
+  }
+
+  /* Build per-cell candidate-frequency stats across every current solution.
+     Returns { freq: Uint16Array(N*N*(N+1)), solCount } where
+       freq[i*(N+1) + v] = # of solutions with values[i] === v (1..N)
+     and index 0 is unused (kept for cheap indexing). */
+  function computePencilmarkStats() {
+    const N = state.puzzle.N;
+    const total = N * N;
+    const sols = state.solutions;
+    const freq = new Uint16Array(total * (N + 1));
+    for (const sol of sols) {
+      const vals = sol.values;
+      for (let i = 0; i < total; i++) {
+        const v = vals[i];
+        if (v >= 1 && v <= N) freq[i * (N + 1) + v]++;
+      }
+    }
+    return { freq, solCount: sols.length };
   }
 
   /* ---------- Rebuild helpers ---------- */
@@ -2223,6 +2778,8 @@ window.SudokuApp = (function () {
       if (state.rainbowDrag) { state.rainbowDrag = false; analyze(); }
       if (state.pathDrag)   { state.pathDrag = false; analyze(); }
       if (state.parityDrag) { state.parityDrag = false; analyze(); }
+      if (state.colIndexDrag) { state.colIndexDrag = false; state.__colIndexPaint = null; analyze(); }
+      if (state.rowIndexDrag) { state.rowIndexDrag = false; state.__rowIndexPaint = null; analyze(); }
     };
     document.addEventListener('mouseup', endAll);
     document.addEventListener('mouseleave', endAll);
@@ -2274,6 +2831,26 @@ window.SudokuApp = (function () {
       analyze();
     });
     state.dom.liveChip = liveChip;
+    const pencilBtn = el('button', 'flag-chip' + (state.pencilmarkOn ? ' active' : ''));
+    pencilBtn._label = T.pencil;
+    pencilBtn.textContent = L(T.pencil);
+    pencilBtn.title = L({
+      en: 'Analyze every solution and annotate cells with their candidates. Enabled when 1 <= solutions <= 196 and the solver cap is not reached.',
+      zh: '分析所有解并在格子中标注候选数字。仅当解数在 1 到 196 之间且未达到求解上限时启用。',
+    });
+    pencilBtn.addEventListener('click', () => {
+      if (pencilBtn.disabled) return;
+      state.pencilmarkOn = !state.pencilmarkOn;
+      pencilBtn.classList.toggle('active', state.pencilmarkOn);
+      if (state.pencilmarkOn) {
+        state.pencilmarkStats = computePencilmarkStats();
+      } else {
+        state.pencilmarkStats = null;
+      }
+      renderSolution(0);
+      drawPencilmarks();
+    });
+    state.dom.pencilBtn = pencilBtn;
     const resetBtn = btn(T.reset, {
       secondary: true,
       onClick: () => {
@@ -2299,6 +2876,9 @@ window.SudokuApp = (function () {
         state.kropkiFirst = -1;
         state.compareFirst = -1;
         state.xvFirst = -1;
+        state.lkDraft = { side: 'top', idx: 0, dir: 'dr', sum: '' };
+        state.pencilmarkOn = false;
+        state.pencilmarkStats = null;
         rebuild();
       },
     });
@@ -2315,7 +2895,7 @@ window.SudokuApp = (function () {
         }
       },
     });
-    solveRow.append(solveBtn, state.dom.prevBtn, state.dom.nextBtn, liveChip);
+    solveRow.append(solveBtn, state.dom.prevBtn, state.dom.nextBtn, liveChip, pencilBtn);
     manageRow.append(resetBtn, exampleBtn, shareBtn, wipeBtn);
     actionsWrap.append(solveRow, manageRow);
     container.appendChild(actionsWrap);

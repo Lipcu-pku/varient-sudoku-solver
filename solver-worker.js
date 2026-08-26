@@ -16,6 +16,9 @@ importScripts(
   'constraints/parity-line.js',
   'constraints/arrow.js',
   'constraints/quadruple.js',
+  'constraints/little-killer.js',
+  'constraints/index-cells.js',
+  'constraints/hitpoint-arrow.js',
   'sudoku-core.js'
 );
 
