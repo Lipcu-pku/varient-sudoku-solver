@@ -212,7 +212,7 @@ window.SudokuApp = (function () {
     boxCLbl: { en: 'Box cols',        zh: '宫格列数' },
     newCage: { en: 'Finish cage',     zh: '完成杀手框' },
     newTh:   { en: 'Finish thermo',   zh: '完成温度计' },
-    delSel:  { en: 'Delete last',     zh: '删除最后' },
+    delSel:  { en: 'Delete last cell', zh: '删除最后一格' },
     sumLbl:  { en: 'Sum',             zh: '总和' },
     regLbl:  { en: 'Region',          zh: '宫格 ID' },
     finishLine: { en: 'Finish line',  zh: '完成线' },
@@ -664,10 +664,12 @@ window.SudokuApp = (function () {
       L({ en: `Path length: ${draft.cells.length}`,
           zh: `路径长度：${draft.cells.length}` })));
     p.appendChild(btn(T.finishLine, { onClick: finishLine }));
-    p.appendChild(btn(T.delSel, {
-      secondary: true,
-      onClick: () => { draft.cells.pop(); rebuild(); },
-    }));
+    if (draft.cells.length) {
+      p.appendChild(btn(T.delSel, {
+        secondary: true,
+        onClick: () => { draft.cells.pop(); rebuild(); },
+      }));
+    }
     const existing = (state.puzzle[field] || []).length;
     if (existing) {
       p.appendChild(btn(T.delLine, {
@@ -1237,10 +1239,12 @@ window.SudokuApp = (function () {
       L({ en: `Path length: ${draft.cells.length}`,
           zh: `路径长度：${draft.cells.length}` })));
     p.appendChild(btn(T.newTh, { onClick: finishThermo }));
-    p.appendChild(btn(T.delSel, {
-      secondary: true,
-      onClick: () => { draft.cells.pop(); rebuild(); },
-    }));
+    if (draft.cells.length) {
+      p.appendChild(btn(T.delSel, {
+        secondary: true,
+        onClick: () => { draft.cells.pop(); rebuild(); },
+      }));
+    }
     if (state.puzzle.thermos.length) {
       p.appendChild(btn({ en: 'Delete last thermo', zh: '删除上一根' }, {
         secondary: true,
