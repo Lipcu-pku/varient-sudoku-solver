@@ -792,13 +792,66 @@ section {
 .lk-svg .lk-arrow:hover .head  { fill:   var(--accent); }
 .lk-svg .lk-arrow:hover .lk-sum{ fill:   var(--accent); }
 
-/* Empty outer-edge spacer used when the frame reserves space for
-   Little Killer arrows but no per-cell input is needed. */
+/* Outer-edge slot used by the Little Killer tool. In view-only mode the slot
+   is a transparent spacer so the SVG arrow overlay has room to breathe.
+   When the LK tool is active the slot becomes a clickable button styled
+   like the sky/sandwich edge cells; corner-adjacent slots that have no
+   valid diagonal are dimmed. */
 .sudoku-frame .lk-edge {
   width: var(--cell-size, 40px);
   height: var(--cell-size, 40px);
   padding: 0;
   margin: 0;
+  background: transparent;
+  border: none;
+  font: inherit;
+  color: inherit;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  line-height: 1;
+  cursor: default;
+}
+.sudoku-frame .lk-edge.clickable {
+  cursor: pointer;
+  border: 1px dashed var(--border);
+  border-radius: 3px;
+  background: var(--surface-2);
+  color: var(--muted);
+}
+.sudoku-frame .lk-edge.clickable:hover {
+  border-color: var(--accent);
+  color: var(--text);
+  background: var(--surface);
+}
+.sudoku-frame .lk-edge.selected {
+  border: 1px solid var(--accent);
+  background: color-mix(in oklab, var(--accent) 12%, var(--surface-2));
+  color: var(--text);
+  outline: 2px solid var(--accent);
+  outline-offset: -3px;
+}
+.sudoku-frame .lk-edge.disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+.sudoku-frame .lk-edge.has-arrow.clickable::after {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  display: block;
+}
+
+.tool-panel .chip.lk-existing {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.tool-panel .chip.lk-existing:hover {
+  background: color-mix(in oklab, var(--accent) 15%, transparent);
 }
 
 /* Hitpoint per-cell arrows. */

@@ -148,8 +148,8 @@ window.SudokuApp = (function () {
       parity:   { en: 'Pick Odd (circle) or Even (square), then click or drag across cells to mark them. Click a marked cell with the same tool to clear.',
                   zh: '选择"奇"（圆圈）或"偶"（方块），然后点击或拖动格子标记；对已相同标记的格再次点击可清除。' },
       littleKiller: {
-        en: 'Pick a side + position + diagonal direction and a sum, then Add. The digits along that diagonal (from the entry cell to the far edge) must sum to the given value. Click any existing arrow to delete.',
-        zh: '选择边、位置、对角方向和总和后按"添加"。从入格开始沿对角线到远端的所有数字之和等于该值。点击已有箭头可删除。',
+        en: 'Click any outer-edge cell to pick a diagonal anchor. Choose a direction (1 or 2 options depending on position) and enter a sum, then Add. Diagonals reached from either end are treated as the same arrow — the editor blocks duplicates. Click existing arrows here to delete them.',
+        zh: '点击网格外圈任一格作为对角锚点，按其位置选择方向（1 或 2 种），输入总和后按"添加"。同一对角线的两个端点视为同一箭头，编辑器会阻止重复。点击此处已有箭头可删除。',
       },
       colIndex: {
         en: 'Click or drag over cells to mark them. In a marked cell at (X, Y): if the digit is Z, then row X column Z must equal Y.',
@@ -259,8 +259,12 @@ window.SudokuApp = (function () {
       parityDrag: false,
       regionDrag: false,
       pathDrag: false,
-      /* Little Killer draft: form-driven placement. */
-      lkDraft: { side: 'top', idx: 0, dir: 'dr', sum: '' },
+      /* Little Killer draft: click-driven placement. lkSelected identifies the
+         currently-picked outer edge cell (or null); lkDraft carries the pending
+         direction+sum being edited for that cell. */
+      lkSelected: null,   /* null | { side, idx } */
+      lkDraft: { dir: null, sum: '' },
+      lkNotice: '',       /* transient message shown in the panel (e.g. conflict reason) */
       /* Column/Row index paint tools share a drag flag with regionDrag. */
       colIndexDrag: false,
       rowIndexDrag: false,
@@ -319,7 +323,9 @@ window.SudokuApp = (function () {
         state.compareFirst = -1;
         state.xvFirst = -1;
         state.rainbowPick = 1;
-        state.lkDraft = { side: 'top', idx: 0, dir: 'dr', sum: '' };
+        state.lkSelected = null;
+        state.lkDraft = { dir: null, sum: '' };
+        state.lkNotice = '';
         state.pencilmarkOn = false;
         state.pencilmarkStats = null;
         rebuild();
@@ -363,7 +369,9 @@ window.SudokuApp = (function () {
         state.compareFirst = -1;
         state.xvFirst = -1;
         state.rainbowPick = 1;
-        state.lkDraft = { side: 'top', idx: 0, dir: 'dr', sum: '' };
+        state.lkSelected = null;
+        state.lkDraft = { dir: null, sum: '' };
+        state.lkNotice = '';
         state.pencilmarkOn = false;
         state.pencilmarkStats = null;
         rebuild();
@@ -428,6 +436,14 @@ window.SudokuApp = (function () {
         b.textContent = L(T.tab[k]);
         b.classList.toggle('active', state.tool === k);
         b.addEventListener('click', () => {
+          /* Leaving the Little Killer tool clears its transient selection so
+             the outer-edge slot doesn't stay in its "selected" state when the
+             user comes back. */
+          if (state.tool === 'littleKiller' && k !== 'littleKiller') {
+            state.lkSelected = null;
+            state.lkDraft = { dir: null, sum: '' };
+            state.lkNotice = '';
+          }
           state.tool = k;
           rebuildToolUI();
         });
@@ -767,8 +783,9 @@ window.SudokuApp = (function () {
     { key: 'ur', glyph: '↗', en: 'Up-Right',   zh: '右上' },
     { key: 'ul', glyph: '↖', en: 'Up-Left',    zh: '左上' },
   ];
-  /* Directions that go INTO the grid from each side. Corners restrict this
-     further — enforced by the diagonal-cells emptiness check at add time. */
+  /* Directions that go INTO the grid from each side. Corners further reduce
+     this to a single direction (degenerate 1-cell diagonals are filtered out
+     by checking diagCells length >= 2). */
   const LK_VALID_DIRS = {
     top:    ['dr', 'dl'],
     bottom: ['ur', 'ul'],
@@ -780,36 +797,96 @@ window.SudokuApp = (function () {
     if (!self.LittleKillerHelpers) return [];
     return self.LittleKillerHelpers.diagCells(side, idx, dir, N);
   }
+  /* Directions whose diagonal has ≥ 2 cells from (side, idx). Excludes the
+     one-cell degenerate case at corners (e.g. top idx 0 direction 'dl'). */
+  function lkDirsAt(side, idx, N) {
+    return LK_VALID_DIRS[side].filter(d => lkDiagCells(side, idx, d, N).length >= 2);
+  }
+  /* Return existing arrows anchored at (side, idx). */
+  function lkArrowsAt(side, idx) {
+    return (state.puzzle.littleKillers || [])
+      .map((lk, i) => ({ lk, i }))
+      .filter(x => x.lk.side === side && x.lk.idx === idx);
+  }
+  /* Sorted-tuple key for a diagonal, for conflict detection: two anchors
+     may describe the same diagonal (each end of the line), so we compare
+     the cell sets rather than the (side, idx, dir) triple. */
+  function lkCellsKey(cells) {
+    return cells.slice().sort((a, b) => a - b).join(',');
+  }
+  /* Find an existing arrow whose diagonal (as a cell set) equals `cells`. */
+  function lkFindByCells(cells) {
+    const key = lkCellsKey(cells);
+    const N = state.puzzle.N;
+    const list = state.puzzle.littleKillers || [];
+    for (let i = 0; i < list.length; i++) {
+      const lk = list[i];
+      if (lkCellsKey(lkDiagCells(lk.side, lk.idx, lk.dir, N)) === key) return i;
+    }
+    return -1;
+  }
 
+  /* Panel: click-driven. When a cell is selected, show direction+sum controls;
+     otherwise show a hint plus global maintenance buttons. */
   function fillLittleKillerPanel(p) {
     const N = state.puzzle.N;
+    const sel = state.lkSelected;
+    const list = state.puzzle.littleKillers || [];
+
+    if (!sel) {
+      p.appendChild(el('span', null,
+        L({ en: 'Click any outer edge cell to add or edit an arrow.',
+            zh: '点击网格外圈任一格以添加或编辑箭头。' })));
+      p.appendChild(el('span', null,
+        L({ en: `Arrows: ${list.length}`, zh: `箭头数：${list.length}` })));
+      if (list.length) {
+        p.appendChild(btn({ en: 'Delete last', zh: '删除最后' }, {
+          secondary: true,
+          onClick: () => { list.pop(); rebuild(); },
+        }));
+        p.appendChild(btn({ en: 'Clear all', zh: '清空全部' }, {
+          secondary: true,
+          onClick: () => { state.puzzle.littleKillers = []; rebuild(); },
+        }));
+      }
+      return;
+    }
+
     const d = state.lkDraft;
-    /* Coerce dir if it doesn't belong to the current side. */
-    const validDirs = LK_VALID_DIRS[d.side];
+    const validDirs = lkDirsAt(sel.side, sel.idx, N);
+    if (!validDirs.length) {
+      /* Shouldn't happen: outer cells with no valid diagonal aren't clickable,
+         but guard anyway so an inconsistent state doesn't leave the panel stuck. */
+      state.lkSelected = null;
+      p.appendChild(el('span', null,
+        L({ en: 'No diagonal available here.', zh: '此处无可用对角线。' })));
+      return;
+    }
     if (!validDirs.includes(d.dir)) d.dir = validDirs[0];
 
-    p.appendChild(el('span', null, L({ en: 'Side', zh: '边' }) + ':'));
-    LK_SIDES.forEach(s => {
-      const chip = el('button', 'chip' + (d.side === s.key ? ' active' : ''));
-      chip.textContent = L({ en: s.en, zh: s.zh });
-      chip.addEventListener('click', () => {
-        d.side = s.key;
-        d.dir = LK_VALID_DIRS[s.key][0];
-        fillToolPanel();
-      });
-      p.appendChild(chip);
-    });
+    const sideName = LK_SIDES.find(s => s.key === sel.side);
+    const posN = (sel.idx | 0) + 1;
+    p.appendChild(el('span', null,
+      L({ en: `Anchor: ${sideName.en} #${posN}`,
+          zh: `锚点：${sideName.zh} 第 ${posN} 格` })));
 
-    p.appendChild(el('span', null, L({ en: 'Pos', zh: '位置' }) + ':'));
-    const posIn = el('input');
-    posIn.type = 'number'; posIn.min = 1; posIn.max = N;
-    posIn.value = String((d.idx | 0) + 1);
-    posIn.style.width = '4rem';
-    posIn.addEventListener('input', () => {
-      const n = Number(posIn.value) | 0;
-      if (n >= 1 && n <= N) d.idx = n - 1;
-    });
-    p.appendChild(posIn);
+    const existing = lkArrowsAt(sel.side, sel.idx);
+    if (existing.length) {
+      p.appendChild(el('span', null,
+        L({ en: 'Existing here:', zh: '此处已有：' })));
+      existing.forEach(({ lk, i }) => {
+        const dir = LK_DIRS.find(x => x.key === lk.dir);
+        const chip = el('button', 'chip lk-existing');
+        chip.textContent = `${dir ? dir.glyph : '?'} ${lk.sum} ×`;
+        chip.title = L({ en: 'Click to delete this arrow', zh: '点击删除此箭头' });
+        chip.addEventListener('click', () => {
+          state.puzzle.littleKillers.splice(i, 1);
+          state.lkNotice = '';
+          rebuild();
+        });
+        p.appendChild(chip);
+      });
+    }
 
     p.appendChild(el('span', null, L({ en: 'Dir', zh: '方向' }) + ':'));
     LK_DIRS.forEach(dir => {
@@ -822,6 +899,7 @@ window.SudokuApp = (function () {
       chip.addEventListener('click', () => {
         if (!enabled) return;
         d.dir = dir.key;
+        state.lkNotice = '';
         fillToolPanel();
       });
       p.appendChild(chip);
@@ -833,36 +911,82 @@ window.SudokuApp = (function () {
     sumIn.value = d.sum;
     sumIn.placeholder = '—';
     sumIn.style.width = '5rem';
-    sumIn.addEventListener('input', () => { d.sum = sumIn.value; });
+    sumIn.addEventListener('input', () => {
+      d.sum = sumIn.value;
+      state.lkNotice = '';
+    });
+    sumIn.addEventListener('keydown', e => {
+      if (e.key === 'Enter') { e.preventDefault(); tryAddLK(); }
+    });
     p.appendChild(sumIn);
 
-    p.appendChild(btn({ en: 'Add', zh: '添加' }, {
+    p.appendChild(btn({ en: 'Add', zh: '添加' }, { onClick: tryAddLK }));
+    p.appendChild(btn({ en: 'Deselect', zh: '取消选中' }, {
+      secondary: true,
       onClick: () => {
-        const sum = Number(d.sum);
-        if (!Number.isFinite(sum) || sum <= 0) return;
-        const cells = lkDiagCells(d.side, d.idx, d.dir, N);
-        if (!cells.length) return;
-        state.puzzle.littleKillers.push({
-          side: d.side, idx: d.idx | 0, dir: d.dir, sum,
-        });
-        d.sum = '';
+        state.lkSelected = null;
+        state.lkDraft = { dir: null, sum: '' };
+        state.lkNotice = '';
         rebuild();
       },
     }));
 
-    const list = state.puzzle.littleKillers || [];
-    p.appendChild(el('span', null,
-      L({ en: `Arrows: ${list.length}`, zh: `箭头数：${list.length}` })));
-    if (list.length) {
-      p.appendChild(btn({ en: 'Delete last', zh: '删除最后' }, {
-        secondary: true,
-        onClick: () => { list.pop(); rebuild(); },
-      }));
-      p.appendChild(btn({ en: 'Clear all', zh: '清空全部' }, {
-        secondary: true,
-        onClick: () => { state.puzzle.littleKillers = []; rebuild(); },
-      }));
+    if (state.lkNotice) {
+      const msg = el('span', 'lk-notice');
+      msg.textContent = state.lkNotice;
+      msg.style.color = 'var(--err, #d33)';
+      msg.style.flex = '1 1 100%';
+      msg.style.textAlign = 'center';
+      p.appendChild(msg);
     }
+  }
+
+  /* Add-arrow action, extracted so both the button and Enter-in-sum can call it. */
+  function tryAddLK() {
+    const N = state.puzzle.N;
+    const sel = state.lkSelected;
+    const d = state.lkDraft;
+    if (!sel) return;
+    const sum = Number(d.sum);
+    if (!Number.isFinite(sum) || sum <= 0) {
+      state.lkNotice = L({ en: 'Enter a positive sum first.',
+                            zh: '请先输入正整数总和。' });
+      fillToolPanel();
+      return;
+    }
+    const validDirs = lkDirsAt(sel.side, sel.idx, N);
+    if (!validDirs.includes(d.dir)) {
+      state.lkNotice = L({ en: 'Pick a valid direction.',
+                            zh: '请选择一个有效方向。' });
+      fillToolPanel();
+      return;
+    }
+    const cells = lkDiagCells(sel.side, sel.idx, d.dir, N);
+    if (cells.length < 2) {
+      state.lkNotice = L({ en: 'This direction has no diagonal.',
+                            zh: '此方向没有有效对角线。' });
+      fillToolPanel();
+      return;
+    }
+    /* Both ends of the same diagonal describe an identical cell set; refuse
+       to add if any existing arrow (from either end) already covers it. */
+    const dup = lkFindByCells(cells);
+    if (dup >= 0) {
+      const other = state.puzzle.littleKillers[dup];
+      const sideName = LK_SIDES.find(s => s.key === other.side);
+      state.lkNotice = L({
+        en: `Same diagonal already has an arrow (${sideName.en} #${(other.idx | 0) + 1}, sum ${other.sum}).`,
+        zh: `同一对角线已存在箭头（${sideName.zh} 第 ${(other.idx | 0) + 1} 格，总和 ${other.sum}）。`,
+      });
+      fillToolPanel();
+      return;
+    }
+    state.puzzle.littleKillers.push({
+      side: sel.side, idx: sel.idx | 0, dir: d.dir, sum,
+    });
+    state.lkDraft.sum = '';
+    state.lkNotice = '';
+    rebuild();
   }
 
   /* ---------- Column / Row Index tools ---------- */
@@ -1088,15 +1212,7 @@ window.SudokuApp = (function () {
     const makeEdge = (side, idx) => {
       if (edgeMode === 'sandwich') return makeSandwich(side, idx);
       if (edgeMode === 'sky')      return makeSky(side, idx);
-      /* Little-killer edge slot: just a spacer; arrows sit in the overlay.
-         Top-side cells rely on explicit grid positions because the append
-         loop for the top row doesn't set them from outside. */
-      const spacer = el('div', 'lk-edge');
-      if (side === 'top') {
-        spacer.style.gridColumn = (idx + 2);
-        spacer.style.gridRow = '1';
-      }
-      return spacer;
+      return makeLK(side, idx);
     };
     const frame = el('div', 'sudoku-frame');
     frame.style.setProperty('--cell-size', size + 'px');
@@ -1213,6 +1329,64 @@ window.SudokuApp = (function () {
       if (e.key === 'Escape') cell.blur();
     });
     return cell;
+  }
+
+  /* Little Killer edge slot: clickable when the LK tool is active. Shows tiny
+     glyph+sum pairs for arrows anchored here so users can see what's already
+     placed without walking the SVG overlay. Non-clickable when a different
+     tool is active — the outer band is still reserved so the SVG overlay
+     doesn't overflow into surrounding page content. */
+  function makeLK(side, idx) {
+    const N = state.puzzle.N;
+    const active = state.tool === 'littleKiller';
+    const dirs = lkDirsAt(side, idx, N);
+    const clickable = active && dirs.length > 0;
+    const btnEl = el(clickable ? 'button' : 'div', 'lk-edge');
+    if (clickable) btnEl.type = 'button';
+    if (side === 'top') {
+      btnEl.style.gridColumn = (idx + 2);
+      btnEl.style.gridRow = '1';
+    }
+    if (active && !dirs.length) btnEl.classList.add('disabled');
+    if (clickable) btnEl.classList.add('clickable');
+    const sel = state.lkSelected;
+    if (sel && sel.side === side && sel.idx === idx) btnEl.classList.add('selected');
+    /* Marker dot when this slot already anchors an arrow, so users can see
+       which outer slots are occupied even before hovering. The SVG overlay
+       still carries the direction + sum near the tail; the dot just makes the
+       slot itself feel active. */
+    if (lkArrowsAt(side, idx).length) btnEl.classList.add('has-arrow');
+    if (clickable) {
+      btnEl.title = L({
+        en: 'Click to add or edit a Little Killer arrow from here',
+        zh: '点击以在此处添加或编辑小杀手箭头',
+      });
+      btnEl.addEventListener('click', () => selectLKAnchor(side, idx));
+    }
+    return btnEl;
+  }
+
+  function selectLKAnchor(side, idx) {
+    const N = state.puzzle.N;
+    const dirs = lkDirsAt(side, idx, N);
+    if (!dirs.length) return;
+    /* Toggle off if the same cell is clicked again. */
+    const cur = state.lkSelected;
+    if (cur && cur.side === side && cur.idx === idx) {
+      state.lkSelected = null;
+      state.lkDraft = { dir: null, sum: '' };
+      state.lkNotice = '';
+      rebuild();
+      return;
+    }
+    state.lkSelected = { side, idx };
+    /* Default: pick the first direction that doesn't already have an arrow
+       here, so the user can add a second entry without a manual dir click. */
+    const usedDirs = new Set(lkArrowsAt(side, idx).map(x => x.lk.dir));
+    const pick = dirs.find(d => !usedDirs.has(d)) || dirs[0];
+    state.lkDraft = { dir: pick, sum: '' };
+    state.lkNotice = '';
+    rebuild();
   }
 
   function buildCells(grid) {
@@ -1947,10 +2121,12 @@ window.SudokuApp = (function () {
       const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
       g.setAttribute('class', 'lk-arrow');
       g.dataset.index = String(li);
-      /* Click on any arrow group deletes that little killer. */
+      /* Click on any arrow group selects its anchor in the LK tool so users
+         can edit/delete via the panel. Outside the LK tool, clicks are ignored
+         so the arrow doesn't disappear from other editors accidentally. */
       g.addEventListener('click', () => {
-        state.puzzle.littleKillers.splice(li, 1);
-        rebuild();
+        if (state.tool !== 'littleKiller') return;
+        selectLKAnchor(lk.side, lk.idx);
       });
       const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
       line.setAttribute('x1', tailX);
@@ -2880,7 +3056,9 @@ window.SudokuApp = (function () {
         state.kropkiFirst = -1;
         state.compareFirst = -1;
         state.xvFirst = -1;
-        state.lkDraft = { side: 'top', idx: 0, dir: 'dr', sum: '' };
+        state.lkSelected = null;
+        state.lkDraft = { dir: null, sum: '' };
+        state.lkNotice = '';
         state.pencilmarkOn = false;
         state.pencilmarkStats = null;
         rebuild();
