@@ -3637,6 +3637,34 @@ window.SudokuApp = (function () {
     } catch (e) { return null; }
   }
 
+  function openOnSudokuPad() {
+    if (typeof SudokuPadExport === 'undefined') {
+      setStatus(L({
+        en: 'SudokuPad export module not loaded.',
+        zh: 'SudokuPad 导出模块未加载。',
+      }), 'error');
+      return;
+    }
+    try {
+      const { url, dropped } = SudokuPadExport.buildLink(state.puzzle);
+      window.open(url, '_blank', 'noopener');
+      if (dropped && dropped.length) {
+        setStatus(L({
+          en: `Opened on SudokuPad. Not natively supported: ${dropped.join(', ')} — visuals kept where possible, logic dropped.`,
+          zh: `已在 SudokuPad 打开。以下约束原生不支持：${dropped.join(', ')} — 尽量保留视觉，逻辑已丢弃。`,
+        }));
+      } else {
+        setStatus(L({ en: 'Opened on SudokuPad.', zh: '已在 SudokuPad 打开。' }), 'ok');
+      }
+    } catch (e) {
+      console.error(e);
+      setStatus(L({
+        en: 'Could not build SudokuPad link — see console.',
+        zh: '无法生成 SudokuPad 链接 — 查看控制台。',
+      }), 'error');
+    }
+  }
+
   /* ---------- Analyze (conflicts + optional solve) ---------- */
   function analyze() {
     state.solutionIdx = 0;
@@ -4100,7 +4128,14 @@ window.SudokuApp = (function () {
       buildKeypad(keypadWrap);
       actionsWrap.append(keypadWrap);
       const playRow = el('div', 'solver-actions');
-      playRow.append(shareBtn);
+      const sudokupadBtn = btn({ en: 'Play on SudokuPad', zh: '在 SudokuPad 上游玩' }, {
+        onClick: openOnSudokuPad,
+      });
+      sudokupadBtn.title = L({
+        en: 'Open this puzzle on sudokupad.app for the full play experience (timer, check, undo/redo, snapshots).',
+        zh: '在 sudokupad.app 上打开此谜题以获得完整的游玩体验（计时、检查、撤销/重做、快照）。',
+      });
+      playRow.append(sudokupadBtn, shareBtn);
       actionsWrap.append(playRow);
     } else {
       actionsWrap.append(solveRow, manageRow);
