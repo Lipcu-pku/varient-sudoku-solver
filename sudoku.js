@@ -686,7 +686,28 @@ window.SudokuApp = (function () {
   function toggleDeletedCell(i) {
     const pz = state.puzzle;
     if (!pz.deleted) return;
+    /* If the grid was still classic (default rectangular box regions, no
+       holes), the moment we introduce a hole the box layout stops making
+       sense — remaining regions won't tile cleanly. Clear every region
+       assignment so the user paints them fresh in the Region editor,
+       which is exactly the "irregular = no default boxes" contract. */
+    const nRows = pz.rows != null ? pz.rows : pz.N;
+    const nCols = pz.cols != null ? pz.cols : pz.N;
+    const total = nRows * nCols;
+    const stillClassic = !anyDeleted(pz)
+      && nRows === nCols && nRows === pz.N
+      && pz.boxR && pz.boxC && nRows % pz.boxR === 0 && nCols % pz.boxC === 0;
+    if (stillClassic) {
+      /* First deletion — wipe all default regions to -1. */
+      for (let k = 0; k < total; k++) pz.regions[k] = -1;
+    }
     pz.deleted[i] = pz.deleted[i] ? 0 : 1;
+    /* Recompute the region count from existing / digits so the region
+       picker offers the right number of chips. Preserves user override
+       only when the arithmetic still works. */
+    let existing = 0;
+    for (let k = 0; k < total; k++) if (!pz.deleted[k]) existing++;
+    if (pz.digits) pz.regionCount = Math.max(0, Math.floor(existing / pz.digits));
     if (pz.deleted[i]) {
       /* Clean up references to this cell. */
       pz.values[i] = 0;
@@ -1864,11 +1885,16 @@ window.SudokuApp = (function () {
         return false;
       };
       const neighRegion = (rr, cc) => (isOutside(rr, cc) ? -2 : regions[rr * nCols + cc]);
+      /* An unassigned cell (region = -1) touching another unassigned cell
+         does NOT get a border — otherwise the moment any single region
+         gets painted, every remaining boundary between unpainted cells
+         suddenly bristles with stray internal edges. */
+      const cmp = (nr) => (regions[i] < 0 && nr < 0) ? false : regions[i] !== nr;
       if (hasCustom) {
-        if (neighRegion(r-1, c) !== regions[i]) input.classList.add('bx-t');
-        if (neighRegion(r, c-1) !== regions[i]) input.classList.add('bx-l');
-        if (neighRegion(r+1, c) !== regions[i]) input.classList.add('bx-b');
-        if (neighRegion(r, c+1) !== regions[i]) input.classList.add('bx-r');
+        if (cmp(neighRegion(r-1, c))) input.classList.add('bx-t');
+        if (cmp(neighRegion(r, c-1))) input.classList.add('bx-l');
+        if (cmp(neighRegion(r+1, c))) input.classList.add('bx-b');
+        if (cmp(neighRegion(r, c+1))) input.classList.add('bx-r');
       } else {
         if ((c + 1) % boxC === 0 && c !== nCols - 1) input.classList.add('bx-r');
         if (c > 0 && c % boxC === 0)                 input.classList.add('bx-l');
@@ -1939,9 +1965,17 @@ window.SudokuApp = (function () {
   }
 
   function hasCustomRegions() {
-    const { N, boxR, boxC, regions } = state.puzzle;
-    const rect = Core.rectRegions(N, boxR, boxC);
-    for (let i = 0; i < N * N; i++) if (rect[i] !== regions[i]) return true;
+    const pz = state.puzzle;
+    const { N, boxR, boxC, regions } = pz;
+    const nRows = pz.rows != null ? pz.rows : N;
+    const nCols = pz.cols != null ? pz.cols : N;
+    /* Any non-square, holey, or region-cleared grid is by definition
+       "custom" — the classic rectangular tiling doesn't apply. */
+    if (nRows !== nCols || nRows !== N) return true;
+    if (anyDeleted(pz)) return true;
+    if (!(boxR && boxC && nRows % boxR === 0 && nCols % boxC === 0)) return true;
+    const rect = Core.rectRegions(nRows, nCols, boxR, boxC);
+    for (let i = 0; i < rect.length; i++) if (rect[i] !== regions[i]) return true;
     return false;
   }
 
@@ -3069,39 +3103,54 @@ window.SudokuApp = (function () {
        buildFlagRow. Auto-disable disjoint when the user starts painting a
        custom region (a quiet mutex rather than a modal). */
     if (p.flags && p.flags.disjoint) p.flags.disjoint = false;
+    /* Deleted cells never take a region assignment. */
+    if (p.deleted && p.deleted[i]) return;
     if (p.regions[i] === state.regionPick) return;
     p.regions[i] = state.regionPick;
     const N = p.N;
+    const nRows = p.rows != null ? p.rows : N;
+    const nCols = p.cols != null ? p.cols : N;
     const grid = state.dom.grid;
     grid.classList.toggle('jigsaw', hasCustomRegions());
     const jig = grid.classList.contains('jigsaw');
     const theme = AppTheme.get();
     const touch = [i];
-    const r = (i / N) | 0, c = i % N;
-    if (r > 0)     touch.push(i - N);
-    if (r < N - 1) touch.push(i + N);
-    if (c > 0)     touch.push(i - 1);
-    if (c < N - 1) touch.push(i + 1);
+    const r = (i / nCols) | 0, c = i % nCols;
+    if (r > 0)         touch.push(i - nCols);
+    if (r < nRows - 1) touch.push(i + nCols);
+    if (c > 0)         touch.push(i - 1);
+    if (c < nCols - 1) touch.push(i + 1);
+    /* Neighbour "region id" for border-comparison purposes: out-of-grid
+       and deleted cells count as "outside" (a distinct id) so an unassigned
+       cell touching a deleted cell still gets a border, but two unassigned
+       cells adjacent to each other DO NOT. */
+    const neighReg = (kr, kc) => {
+      if (kr < 0 || kr >= nRows || kc < 0 || kc >= nCols) return -2;
+      const nk = kr * nCols + kc;
+      if (p.deleted && p.deleted[nk]) return -2;
+      return p.regions[nk];
+    };
     for (const k of touch) {
       const cell = state.dom.cells[k]; if (!cell) continue;
       cell.classList.remove('bx-t','bx-b','bx-l','bx-r');
-      const kr = (k / N) | 0, kc = k % N;
-      /* Always keep --region-bg current so the region-mode tint covers the
-         whole grid; without this, a half-painted region would render as two
-         colors (the touched cells vs. the untouched ones). */
-      cell.style.setProperty('--region-bg', regionColor(p.regions[k], theme));
-      /* Mirror the four-sided edge convention used by buildCells so every
-         boundary is drawn from both adjacent cells and stays centered. */
+      const kr = (k / nCols) | 0, kc = k % nCols;
+      cell.style.setProperty('--region-bg', p.regions[k] >= 0 ? regionColor(p.regions[k], theme) : 'transparent');
       if (jig) {
-        if (kr > 0     && p.regions[k - N] !== p.regions[k]) cell.classList.add('bx-t');
-        if (kc > 0     && p.regions[k - 1] !== p.regions[k]) cell.classList.add('bx-l');
-        if (kr < N - 1 && p.regions[k + N] !== p.regions[k]) cell.classList.add('bx-b');
-        if (kc < N - 1 && p.regions[k + 1] !== p.regions[k]) cell.classList.add('bx-r');
+        /* Only draw a border between two "real" region ids that differ.
+           If BOTH sides are -1 (unassigned) skip; otherwise the many
+           stray internal edges the user reported would appear as soon as
+           any single cell got painted. */
+        const kReg = p.regions[k];
+        const cmp = (nr) => (kReg < 0 && nr < 0) ? false : kReg !== nr;
+        if (cmp(neighReg(kr-1, kc))) cell.classList.add('bx-t');
+        if (cmp(neighReg(kr,   kc-1))) cell.classList.add('bx-l');
+        if (cmp(neighReg(kr+1, kc))) cell.classList.add('bx-b');
+        if (cmp(neighReg(kr,   kc+1))) cell.classList.add('bx-r');
       } else {
-        if ((kc + 1) % p.boxC === 0 && kc !== N - 1) cell.classList.add('bx-r');
-        if (kc > 0 && kc % p.boxC === 0)             cell.classList.add('bx-l');
-        if ((kr + 1) % p.boxR === 0 && kr !== N - 1) cell.classList.add('bx-b');
-        if (kr > 0 && kr % p.boxR === 0)             cell.classList.add('bx-t');
+        if ((kc + 1) % p.boxC === 0 && kc !== nCols - 1) cell.classList.add('bx-r');
+        if (kc > 0 && kc % p.boxC === 0)                 cell.classList.add('bx-l');
+        if ((kr + 1) % p.boxR === 0 && kr !== nRows - 1) cell.classList.add('bx-b');
+        if (kr > 0 && kr % p.boxR === 0)                 cell.classList.add('bx-t');
       }
     }
   }
