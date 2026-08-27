@@ -1894,14 +1894,14 @@ window.SudokuApp = (function () {
            - out-of-grid / deleted (outside the shape)   → use bx-*-outer (3px)
            - a different real region                     → use bx-*     (1.5px, pairs with the other side)
            - the same region, or two unassigned cells    → no border
-         Two adjacent unassigned cells intentionally get NO border so the
-         paint-in-progress state doesn't bristle with stray internal edges. */
+         The outer perimeter is ALWAYS drawn — even for unassigned cells —
+         so the shape has a visible outline regardless of whether regions
+         have been painted yet. Two adjacent unassigned interior cells DO
+         NOT draw a border between them; only region-vs-region and any
+         shape-edge get a line. */
       const chooseBorder = (rr, cc, side) => {
         const outside = isOutside(rr, cc);
-        if (outside) {
-          if (regions[i] < 0) return null;  /* unassigned touching outside: no border */
-          return 'bx-' + side + '-outer';
-        }
+        if (outside) return 'bx-' + side + '-outer';
         const nr = regions[rr * nCols + cc];
         if (regions[i] < 0 && nr < 0) return null;
         if (regions[i] === nr) return null;
@@ -3167,10 +3167,7 @@ window.SudokuApp = (function () {
       const chooseSide = (kr2, kc2, side) => {
         const outside = (kr2 < 0 || kr2 >= nRows || kc2 < 0 || kc2 >= nCols)
                         || (p.deleted && p.deleted[kr2 * nCols + kc2]);
-        if (outside) {
-          if (kReg < 0) return null;
-          return 'bx-' + side + '-outer';
-        }
+        if (outside) return 'bx-' + side + '-outer';
         const nr = p.regions[kr2 * nCols + kc2];
         if (kReg < 0 && nr < 0) return null;
         if (kReg === nr) return null;
@@ -3192,6 +3189,11 @@ window.SudokuApp = (function () {
         if (kc === nCols - 1) cell.classList.add('bx-r-outer');
       }
     }
+    /* Refresh the Region panel so per-chip counters (e.g. "1(5/9)") and
+       the running "unassigned" total track every paint immediately —
+       fillToolPanel is a cheap tool-panel rebuild, not a full grid
+       re-render. */
+    if (state.tool === 'region' && state.dom.toolPanel) fillToolPanel();
   }
 
   /* Find the finalized-cage index containing cell `i`, or -1. */
