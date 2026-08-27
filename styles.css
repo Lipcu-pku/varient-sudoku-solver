@@ -558,7 +558,7 @@ section {
 
 /* Thermometer overlay elements. Group-level opacity avoids the double-alpha
    darkening where the stem passes under the bulb. */
-.thermo-svg { position: absolute; top: 0; left: 0; pointer-events: none; overflow: visible; }
+.thermo-svg { position: absolute; top: 0; left: 0; pointer-events: none; overflow: visible; z-index: 3; }
 .thermo-svg .thermo-group        { opacity: 0.4; }
 .thermo-svg .thermo-group.active { opacity: 0.7; }
 .thermo-svg .bulb                { fill: var(--muted); }
@@ -569,7 +569,7 @@ section {
 /* Whisper / region-sum / modular lines share this overlay. Each type has a
    distinct color AND stroke pattern so they stay identifiable when they
    cross. The small letter tag near the first cell reinforces the type. */
-.line-svg { position: absolute; top: 0; left: 0; pointer-events: none; overflow: visible; }
+.line-svg { position: absolute; top: 0; left: 0; pointer-events: none; overflow: visible; z-index: 3; }
 .line-svg .line { fill: none; opacity: 0.65; }
 .line-svg .line.whisper    { stroke: #22c55e; }                        /* solid green */
 .line-svg .line.regionsum  { stroke: #38bdf8; stroke-dasharray: 8 4; } /* dashed blue */
@@ -597,7 +597,7 @@ section {
 .line-svg .line-tag.parityline { fill: #14b8a6; }
 
 /* Arrow overlay: gray pill for the base cell(s), thin shaft with arrowhead. */
-.arrow-svg { position: absolute; top: 0; left: 0; pointer-events: none; overflow: visible; }
+.arrow-svg { position: absolute; top: 0; left: 0; pointer-events: none; overflow: visible; z-index: 3; }
 .arrow-svg .arrow-group        { opacity: 0.7; }
 .arrow-svg .arrow-group.active { opacity: 0.95; }
 .arrow-svg .base {
