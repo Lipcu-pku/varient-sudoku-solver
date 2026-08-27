@@ -39,7 +39,7 @@ self.SudokuConstraints.register({
     const band = v => v <= tercile ? 0 : v <= 2 * tercile ? 1 : 2;
     const bandMasks = [0, 0, 0];
     for (let v = 1; v <= N; v++) bandMasks[band(v)] |= 1 << (v - 1);
-    const trios = Array.from({ length: N * N }, () => []);
+    const trios = Array.from({ length: ctx.total != null ? ctx.total : N * N }, () => []);
     for (const line of lines) {
       for (let k = 0; k + 2 < line.length; k++) {
         const trio = [line[k], line[k+1], line[k+2]];

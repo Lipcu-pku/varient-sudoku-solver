@@ -46,7 +46,7 @@ self.SudokuConstraints.register({
     const list = p.lockoutLines || [];
     if (!list.length) return null;
     const N = ctx.N;
-    const lookup = Array.from({ length: N * N }, () => []);
+    const lookup = Array.from({ length: ctx.total != null ? ctx.total : N * N }, () => []);
     list.forEach((line, li) => {
       if (line.length < 2) return;
       lookup[line[0]].push({ li, role: 'a' });

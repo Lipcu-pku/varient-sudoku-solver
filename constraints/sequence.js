@@ -40,7 +40,7 @@ self.SudokuConstraints.register({
     if (!list.length) return null;
     const N = ctx.N;
     /* Per cell: [ { li, pos } ]. */
-    const lookup = Array.from({ length: N * N }, () => []);
+    const lookup = Array.from({ length: ctx.total != null ? ctx.total : N * N }, () => []);
     list.forEach((line, li) => line.forEach((idx, pos) => lookup[idx].push({ li, pos })));
     return { list, lookup };
   },

@@ -41,8 +41,7 @@ self.SudokuConstraints.register({
   solverInit(p, ctx) {
     const arrows = p.arrows || [];
     if (!arrows.length) return null;
-    const N = ctx.N;
-    const total = N * N;
+    const total = ctx.total != null ? ctx.total : ctx.N * ctx.N;
     const baseOf = Array.from({ length: total }, () => []);
     const pathOf = Array.from({ length: total }, () => []);
     arrows.forEach((a, ai) => {

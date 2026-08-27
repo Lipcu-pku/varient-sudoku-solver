@@ -69,23 +69,65 @@ self.SudokuCore = (function () {
     return v >= 1 && v <= N;
   }
 
-  /* Rectangular-box region index. */
-  function rectRegions(N, boxR, boxC) {
-    const boxesPerRow = N / boxC;
-    const out = new Int8Array(N * N);
-    for (let i = 0; i < N * N; i++) {
-      const r = (i / N) | 0, c = i % N;
+  /* Rectangular-box region index. For a rows×cols grid (assumed to be
+     tiled by boxR × boxC boxes), produce a default region assignment where
+     each cell gets its box index. This is only well-defined when
+     `boxR` divides `rows` and `boxC` divides `cols`; the caller should
+     force jigsaw regions when it doesn't. */
+  function rectRegions(rowsOrN, colsOrBoxR, boxROrBoxC, boxCArg) {
+    /* Two calling conventions:
+         rectRegions(N, boxR, boxC)               (square legacy)
+         rectRegions(rows, cols, boxR, boxC)      (rectangular new)  */
+    let rows, cols, boxR, boxC;
+    if (boxCArg === undefined) {
+      rows = cols = rowsOrN; boxR = colsOrBoxR; boxC = boxROrBoxC;
+    } else {
+      rows = rowsOrN; cols = colsOrBoxR; boxR = boxROrBoxC; boxC = boxCArg;
+    }
+    const boxesPerRow = Math.ceil(cols / boxC);
+    const out = new Int8Array(rows * cols);
+    for (let i = 0; i < rows * cols; i++) {
+      const r = (i / cols) | 0, c = i % cols;
       out[i] = Math.floor(r / boxR) * boxesPerRow + Math.floor(c / boxC);
     }
     return out;
   }
 
-  function newPuzzle(N, boxR, boxC) {
+  /* Sensible default digit-domain size for a rectangular grid. */
+  function defaultDigits(rows, cols) { return Math.max(rows, cols); }
+  function anyHole(deleted) {
+    if (!deleted) return false;
+    for (let i = 0; i < deleted.length; i++) if (deleted[i]) return true;
+    return false;
+  }
+
+  function newPuzzle(N, boxR, boxC, opts) {
+    /* Legacy signature newPuzzle(N, boxR, boxC) → square N×N with digits N.
+       New signature newPuzzle(N, boxR, boxC, {rows, cols, digits, deleted})
+       → any rectangular bounding box, optionally with deleted cells. */
+    opts = opts || {};
+    const rows   = opts.rows   != null ? opts.rows   : N;
+    const cols   = opts.cols   != null ? opts.cols   : N;
+    const digits = opts.digits != null ? opts.digits : N;
+    const total  = rows * cols;
+    const deleted = new Uint8Array(total);
+    if (opts.deleted) {
+      const src = opts.deleted;
+      const len = Math.min(src.length, total);
+      for (let i = 0; i < len; i++) deleted[i] = src[i] ? 1 : 0;
+    }
     const p = {
-      N, boxR, boxC,
-      values:  new Uint8Array(N * N),
-      given:   new Uint8Array(N * N),
-      regions: rectRegions(N, boxR, boxC),
+      /* `N` remains the canonical digit-count so all plugin code that reads
+         `ctx.N` / `p.N` keeps working unchanged. On classic square puzzles
+         N == rows == cols == digits. */
+      N: digits,
+      digits,
+      rows, cols,
+      boxR, boxC,
+      deleted,
+      values:  new Uint8Array(total),
+      given:   new Uint8Array(total),
+      regions: rectRegions(rows, cols, boxR, boxC),
       cages:   [],
       thermos: [],
       whispers:   [],
@@ -94,14 +136,16 @@ self.SudokuCore = (function () {
       kropki:     [],
       compare:    [],
       xv:         [],
-      parity:   new Int8Array(N * N),
-      sky:      { top: new Uint8Array(N), bottom: new Uint8Array(N),
-                  left: new Uint8Array(N), right: new Uint8Array(N) },
-      sandwich: { top: new Uint8Array(N), bottom: new Uint8Array(N),
-                  left: new Uint8Array(N), right: new Uint8Array(N) },
-      rainbow:  new Int8Array(N * N),
+      parity:   new Int8Array(total),
+      sky:      { top: new Uint8Array(cols), bottom: new Uint8Array(cols),
+                  left: new Uint8Array(rows), right: new Uint8Array(rows) },
+      sandwich: { top: new Uint8Array(cols), bottom: new Uint8Array(cols),
+                  left: new Uint8Array(rows), right: new Uint8Array(rows) },
+      rainbow:  new Int8Array(total),
       flags:   { diagonal:false, antiKnight:false, antiKing:false, antiConsecutive:false, disjoint:false },
     };
+    /* Deleted cells never carry a region — mark as -1. */
+    for (let i = 0; i < total; i++) if (deleted[i]) p.regions[i] = -1;
     /* Plugin-managed fields (constraints/*.js). */
     for (const c of pluginList()) if (c.newFields) c.newFields(p);
     return p;
@@ -123,31 +167,49 @@ self.SudokuCore = (function () {
   /* ---------- Cell adjacency helpers used by constraints ---------- */
   const KNIGHT_D = [[-2,-1],[-2,1],[-1,-2],[-1,2],[1,-2],[1,2],[2,-1],[2,1]];
   const KING_D   = [[-1,-1],[-1,0],[-1,1],[0,-1],[0,1],[1,-1],[1,0],[1,1]];
-  function forEachOffset(r, c, N, offsets, fn) {
+  /* Legacy signature forEachOffset(r, c, N, offsets, fn) still supported
+     for square grids. New signature forEachOffset(r, c, rows, cols, offsets, fn)
+     handles rectangular / irregular. Deleted-cell skipping is the caller's
+     responsibility (they know the puzzle context). */
+  function forEachOffset(r, c, rowsOrN, colsOrOffsets, offsetsOrFn, fnMaybe) {
+    let rows, cols, offsets, fn;
+    if (fnMaybe === undefined) {
+      /* 5-arg square form */
+      rows = cols = rowsOrN;
+      offsets = colsOrOffsets;
+      fn = offsetsOrFn;
+    } else {
+      rows = rowsOrN; cols = colsOrOffsets;
+      offsets = offsetsOrFn; fn = fnMaybe;
+    }
     for (const [dr, dc] of offsets) {
       const nr = r + dr, nc = c + dc;
-      if (nr >= 0 && nr < N && nc >= 0 && nc < N) fn(nr * N + nc);
+      if (nr >= 0 && nr < rows && nc >= 0 && nc < cols) fn(nr * cols + nc);
     }
   }
 
   /* ---------- Conflict scan (all defined constraints) ---------- */
   function findConflicts(p) {
     const { N, values, regions, cages, thermos, sky, flags } = p;
+    const nRows = p.rows != null ? p.rows : N;
+    const nCols = p.cols != null ? p.cols : N;
+    const total = nRows * nCols;
+    const deleted = p.deleted || new Uint8Array(total);
     const whispers   = p.whispers   || [];
     const regionSums = p.regionSums || [];
     const modulars   = p.modulars   || [];
     const kropki     = p.kropki     || [];
     const compare    = p.compare    || [];
     const xv         = p.xv         || [];
-    const parity     = p.parity     || new Int8Array(N * N);
-    const sandwich   = p.sandwich   || { top:new Uint8Array(N), bottom:new Uint8Array(N),
-                                         left:new Uint8Array(N), right:new Uint8Array(N) };
-    const rainbow    = p.rainbow    || new Int8Array(N * N);
+    const parity     = p.parity     || new Int8Array(total);
+    const sandwich   = p.sandwich   || { top:new Uint8Array(nCols), bottom:new Uint8Array(nCols),
+                                         left:new Uint8Array(nRows), right:new Uint8Array(nRows) };
+    const rainbow    = p.rainbow    || new Int8Array(total);
     const wMin = whisperMin(N);
     const conflicts = new Set();
-    const rows  = Array.from({ length: N }, () => new Map());
-    const cols  = Array.from({ length: N }, () => new Map());
-    const boxes = Array.from({ length: N }, () => new Map());
+    const rowMaps  = Array.from({ length: nRows }, () => new Map());
+    const colMaps  = Array.from({ length: nCols }, () => new Map());
+    const boxes = new Map();  /* keyed by region id — region count is variable */
     const diag1 = new Map(), diag2 = new Map();
 
     function clash(a, b) { conflicts.add(a); conflicts.add(b); }
@@ -155,32 +217,40 @@ self.SudokuCore = (function () {
       if (map.has(key)) clash(map.get(key), i);
       else map.set(key, i);
     }
+    function putBox(regionId, v, i) {
+      if (regionId < 0) return;
+      let m = boxes.get(regionId);
+      if (!m) { m = new Map(); boxes.set(regionId, m); }
+      put(m, v, i);
+    }
 
-    for (let i = 0; i < N * N; i++) {
+    for (let i = 0; i < total; i++) {
+      if (deleted[i]) continue;
       const v = values[i]; if (!v) continue;
-      const r = (i / N) | 0, c = i % N;
-      put(rows[r],  v, i);
-      put(cols[c],  v, i);
-      put(boxes[regions[i]], v, i);
-      if (flags.diagonal) {
-        if (r === c)         put(diag1, v, i);
-        if (r + c === N - 1) put(diag2, v, i);
+      const r = (i / nCols) | 0, c = i % nCols;
+      put(rowMaps[r], v, i);
+      put(colMaps[c], v, i);
+      putBox(regions[i], v, i);
+      if (flags.diagonal && nRows === nCols) {
+        if (r === c)             put(diag1, v, i);
+        if (r + c === nRows - 1) put(diag2, v, i);
       }
     }
 
     if (flags.antiKnight || flags.antiKing || flags.antiConsecutive) {
-      for (let i = 0; i < N * N; i++) {
+      for (let i = 0; i < total; i++) {
+        if (deleted[i]) continue;
         const v = values[i]; if (!v) continue;
-        const r = (i / N) | 0, c = i % N;
+        const r = (i / nCols) | 0, c = i % nCols;
         if (flags.antiKnight) {
-          forEachOffset(r, c, N, KNIGHT_D, j => { if (values[j] === v) clash(i, j); });
+          forEachOffset(r, c, nRows, nCols, KNIGHT_D, j => { if (!deleted[j] && values[j] === v) clash(i, j); });
         }
         if (flags.antiKing) {
-          forEachOffset(r, c, N, KING_D, j => { if (values[j] === v) clash(i, j); });
+          forEachOffset(r, c, nRows, nCols, KING_D, j => { if (!deleted[j] && values[j] === v) clash(i, j); });
         }
         if (flags.antiConsecutive) {
-          forEachOffset(r, c, N, [[-1,0],[1,0],[0,-1],[0,1]], j => {
-            if (values[j] && Math.abs(values[j] - v) === 1) clash(i, j);
+          forEachOffset(r, c, nRows, nCols, [[-1,0],[1,0],[0,-1],[0,1]], j => {
+            if (!deleted[j] && values[j] && Math.abs(values[j] - v) === 1) clash(i, j);
           });
         }
       }
@@ -206,17 +276,20 @@ self.SudokuCore = (function () {
       for (const v of vs) { if (v > maxSoFar) { maxSoFar = v; seen++; } }
       if (seen !== clue) mark();
     }
-    for (let r = 0; r < N; r++) {
-      const row = [], rowRev = [];
-      for (let c = 0; c < N; c++) { row.push(r*N+c); rowRev.push(r*N+(N-1-c)); }
-      checkSky(row,    sky.left[r],  () => row.forEach(i => conflicts.add(i)));
-      checkSky(rowRev, sky.right[r], () => rowRev.forEach(i => conflicts.add(i)));
-    }
-    for (let c = 0; c < N; c++) {
-      const col = [], colRev = [];
-      for (let r = 0; r < N; r++) { col.push(r*N+c); colRev.push((N-1-r)*N+c); }
-      checkSky(col,    sky.top[c],    () => col.forEach(i => conflicts.add(i)));
-      checkSky(colRev, sky.bottom[c], () => colRev.forEach(i => conflicts.add(i)));
+    /* Skyscraper: only meaningful on rectangular grids without holes. */
+    if (!p.deleted || !anyHole(p.deleted)) {
+      for (let r = 0; r < nRows; r++) {
+        const row = [], rowRev = [];
+        for (let c = 0; c < nCols; c++) { row.push(r*nCols+c); rowRev.push(r*nCols+(nCols-1-c)); }
+        checkSky(row,    sky.left && sky.left[r],  () => row.forEach(i => conflicts.add(i)));
+        checkSky(rowRev, sky.right && sky.right[r], () => rowRev.forEach(i => conflicts.add(i)));
+      }
+      for (let c = 0; c < nCols; c++) {
+        const col = [], colRev = [];
+        for (let r = 0; r < nRows; r++) { col.push(r*nCols+c); colRev.push((nRows-1-r)*nCols+c); }
+        checkSky(col,    sky.top && sky.top[c],    () => col.forEach(i => conflicts.add(i)));
+        checkSky(colRev, sky.bottom && sky.bottom[c], () => colRev.forEach(i => conflicts.add(i)));
+      }
     }
 
     /* Whisper lines: consecutive cells differ by ≥ wMin when both filled. */
@@ -294,7 +367,8 @@ self.SudokuCore = (function () {
     }
 
     /* Parity marks: filled cell must match its parity mark (1 odd / 2 even). */
-    for (let i = 0; i < N * N; i++) {
+    for (let i = 0; i < total; i++) {
+      if (deleted[i]) continue;
       const par = parity[i]; if (!par) continue;
       const v = values[i]; if (!v) continue;
       if ((par === 1 && (v & 1) === 0) || (par === 2 && (v & 1) === 1)) conflicts.add(i);
@@ -320,17 +394,19 @@ self.SudokuCore = (function () {
       const s = sandwichSum(vs);
       if (s !== clue) mark();
     }
-    for (let r = 0; r < N; r++) {
-      const row = [], rowRev = [];
-      for (let c = 0; c < N; c++) { row.push(r*N+c); rowRev.push(r*N+(N-1-c)); }
-      checkSandwich(row,    sandwich.left[r],  () => row.forEach(i => conflicts.add(i)));
-      checkSandwich(rowRev, sandwich.right[r], () => rowRev.forEach(i => conflicts.add(i)));
-    }
-    for (let c = 0; c < N; c++) {
-      const col = [], colRev = [];
-      for (let r = 0; r < N; r++) { col.push(r*N+c); colRev.push((N-1-r)*N+c); }
-      checkSandwich(col,    sandwich.top[c],    () => col.forEach(i => conflicts.add(i)));
-      checkSandwich(colRev, sandwich.bottom[c], () => colRev.forEach(i => conflicts.add(i)));
+    if (!anyHole(deleted)) {
+      for (let r = 0; r < nRows; r++) {
+        const row = [], rowRev = [];
+        for (let c = 0; c < nCols; c++) { row.push(r*nCols+c); rowRev.push(r*nCols+(nCols-1-c)); }
+        checkSandwich(row,    sandwich.left && sandwich.left[r],  () => row.forEach(i => conflicts.add(i)));
+        checkSandwich(rowRev, sandwich.right && sandwich.right[r], () => rowRev.forEach(i => conflicts.add(i)));
+      }
+      for (let c = 0; c < nCols; c++) {
+        const col = [], colRev = [];
+        for (let r = 0; r < nRows; r++) { col.push(r*nCols+c); colRev.push((nRows-1-r)*nCols+c); }
+        checkSandwich(col,    sandwich.top && sandwich.top[c],    () => col.forEach(i => conflicts.add(i)));
+        checkSandwich(colRev, sandwich.bottom && sandwich.bottom[c], () => colRev.forEach(i => conflicts.add(i)));
+      }
     }
 
     /* Cages: no repeats and sum bookkeeping. */
@@ -414,14 +490,35 @@ self.SudokuCore = (function () {
   }
 
   /* Region check: N cells each, N regions, cover the whole grid. */
-  function regionsValid(regions, N) {
-    const counts = new Int32Array(N);
-    for (let i = 0; i < N * N; i++) {
-      const r = regions[i];
-      if (r < 0 || r >= N) return false;
-      counts[r]++;
+  /* Legacy signature regionsValid(regions, N) is preserved for callers that
+     still assume an N×N grid. New callers should pass the whole puzzle
+     object so we can inspect its deleted-cell bitmap. Every non-deleted
+     cell must have a valid region and each region must hold exactly
+     `digits` cells. */
+  function regionsValid(regionsOrP, N) {
+    let regions, digits, total, deleted;
+    if (regionsOrP && regionsOrP.regions) {
+      const p = regionsOrP;
+      regions = p.regions;
+      digits  = p.digits != null ? p.digits : p.N;
+      const nRows = p.rows != null ? p.rows : p.N;
+      const nCols = p.cols != null ? p.cols : p.N;
+      total   = nRows * nCols;
+      deleted = p.deleted || new Uint8Array(total);
+    } else {
+      regions = regionsOrP;
+      digits  = N;
+      total   = N * N;
+      deleted = new Uint8Array(total);
     }
-    for (let r = 0; r < N; r++) if (counts[r] !== N) return false;
+    const counts = new Map();
+    for (let i = 0; i < total; i++) {
+      if (deleted[i]) continue;
+      const r = regions[i];
+      if (r < 0) return false;
+      counts.set(r, (counts.get(r) || 0) + 1);
+    }
+    for (const [, c] of counts) if (c !== digits) return false;
     return true;
   }
 
@@ -430,29 +527,42 @@ self.SudokuCore = (function () {
 
   function findSolutions(p) {
     const { N, values, regions, cages, thermos, sky, flags } = p;
+    const nRows = p.rows != null ? p.rows : N;
+    const nCols = p.cols != null ? p.cols : N;
+    const total = nRows * nCols;
+    const deleted = p.deleted || new Uint8Array(total);
     const whispers   = p.whispers   || [];
     const regionSums = p.regionSums || [];
     const modulars   = p.modulars   || [];
     const kropki     = p.kropki     || [];
     const compare    = p.compare    || [];
     const xv         = p.xv         || [];
-    const parity     = p.parity     || new Int8Array(N * N);
-    const sandwich   = p.sandwich   || { top:new Uint8Array(N), bottom:new Uint8Array(N),
-                                         left:new Uint8Array(N), right:new Uint8Array(N) };
-    const rainbow    = p.rainbow    || new Int8Array(N * N);
+    const parity     = p.parity     || new Int8Array(total);
+    const sandwich   = p.sandwich   || { top:new Uint8Array(nCols), bottom:new Uint8Array(nCols),
+                                         left:new Uint8Array(nRows), right:new Uint8Array(nRows) };
+    const rainbow    = p.rainbow    || new Int8Array(total);
     const wMin = whisperMin(N);
-    if (!regionsValid(regions, N)) return { solutions: [], reachedCap: false, invalidRegions: true };
+    /* Region count for the box mask arrays. On classic puzzles this is N;
+       on irregular puzzles it's (existing cells / digits). */
+    let regionCount = 0;
+    for (let i = 0; i < total; i++) {
+      if (deleted[i]) continue;
+      const r = regions[i];
+      if (r >= regionCount) regionCount = r + 1;
+    }
+    if (!regionsValid(p)) return { solutions: [], reachedCap: false, invalidRegions: true };
 
     /* Rainbow partition pre-check: each row/col/box may hold each non-zero
        color at most once. This depends only on the coloring, not on digits,
        so if it fails there is no solution regardless of placement. */
     {
-      const rowC = Array.from({ length: N }, () => new Set());
-      const colC = Array.from({ length: N }, () => new Set());
-      const boxC = Array.from({ length: N }, () => new Set());
-      for (let i = 0; i < N * N; i++) {
+      const rowC = Array.from({ length: nRows }, () => new Set());
+      const colC = Array.from({ length: nCols }, () => new Set());
+      const boxC = Array.from({ length: regionCount }, () => new Set());
+      for (let i = 0; i < total; i++) {
+        if (deleted[i]) continue;
         const rb = rainbow[i]; if (!rb) continue;
-        const r = (i / N) | 0, c = i % N;
+        const r = (i / nCols) | 0, c = i % nCols;
         if (rowC[r].has(rb) || colC[c].has(rb) || boxC[regions[i]].has(rb)) {
           return { solutions: [], reachedCap: false };
         }
@@ -461,26 +571,26 @@ self.SudokuCore = (function () {
     }
 
     const full = (1 << N) - 1;
-    const rowM = new Array(N).fill(0);
-    const colM = new Array(N).fill(0);
-    const boxM = new Array(N).fill(0);
+    const rowM = new Array(nRows).fill(0);
+    const colM = new Array(nCols).fill(0);
+    const boxM = new Array(regionCount).fill(0);
     let d1 = 0, d2 = 0;
-    const grid = new Uint8Array(N * N);
+    const grid = new Uint8Array(total);
 
     /* Cage bookkeeping */
-    const cageOf = new Array(N * N).fill(-1);
+    const cageOf = new Array(total).fill(-1);
     cages.forEach((cage, ci) => { for (const i of cage.cells) cageOf[i] = ci; });
     const cageMask = new Int32Array(cages.length);
     const cageSum  = new Int32Array(cages.length);
     const cageFill = new Int32Array(cages.length);
 
     /* Thermo lookup: for each cell, list of (thermoIdx, positionOnPath). */
-    const thermoAt = Array.from({ length: N * N }, () => []);
+    const thermoAt = Array.from({ length: total }, () => []);
     thermos.forEach((t, ti) => t.forEach((i, pos) => thermoAt[i].push([ti, pos])));
     const thermoValues = thermos.map(t => new Uint8Array(t.length));
 
     /* Whisper lookup: adjacency pairs by cell (undirected). */
-    const whisperNbrs = Array.from({ length: N * N }, () => []);
+    const whisperNbrs = Array.from({ length: total }, () => []);
     for (const line of whispers) {
       for (let k = 1; k < line.length; k++) {
         whisperNbrs[line[k-1]].push(line[k]);
@@ -489,7 +599,7 @@ self.SudokuCore = (function () {
     }
 
     /* Modular lookup: for each cell, all sliding 3-windows it belongs to. */
-    const modWindows = Array.from({ length: N * N }, () => []);
+    const modWindows = Array.from({ length: total }, () => []);
     for (const line of modulars) {
       for (let k = 0; k + 2 < line.length; k++) {
         const trio = [line[k], line[k+1], line[k+2]];
@@ -498,7 +608,7 @@ self.SudokuCore = (function () {
     }
 
     /* Kropki lookup: for each cell, list of { other, kind }. */
-    const kropkiNbrs = Array.from({ length: N * N }, () => []);
+    const kropkiNbrs = Array.from({ length: total }, () => []);
     for (const d of kropki) {
       kropkiNbrs[d.a].push({ other: d.b, kind: d.kind });
       kropkiNbrs[d.b].push({ other: d.a, kind: d.kind });
@@ -515,14 +625,14 @@ self.SudokuCore = (function () {
 
     /* Compare lookup: for each cell, list of { other, rel } where rel = 'lt'
        means this cell < other, and 'gt' means this cell > other. */
-    const compareNbrs = Array.from({ length: N * N }, () => []);
+    const compareNbrs = Array.from({ length: total }, () => []);
     for (const d of compare) {
       compareNbrs[d.a].push({ other: d.b, rel: d.kind });
       compareNbrs[d.b].push({ other: d.a, rel: d.kind === 'lt' ? 'gt' : 'lt' });
     }
 
     /* XV lookup: for each cell, list of { other, target } (10 for X, 5 for V). */
-    const xvNbrs = Array.from({ length: N * N }, () => []);
+    const xvNbrs = Array.from({ length: total }, () => []);
     for (const d of xv) {
       const target = d.kind === 'x' ? 10 : 5;
       xvNbrs[d.a].push({ other: d.b, target });
@@ -533,8 +643,8 @@ self.SudokuCore = (function () {
        even values, and vice versa. Precompute once. */
     const oddForbidden  = ((v) => { let m = 0; for (let x = 2; x <= v; x += 2) m |= 1 << (x-1); return m; })(N);
     const evenForbidden = ((v) => { let m = 0; for (let x = 1; x <= v; x += 2) m |= 1 << (x-1); return m; })(N);
-    const parityMask = new Int32Array(N * N);
-    for (let i = 0; i < N * N; i++) {
+    const parityMask = new Int32Array(total);
+    for (let i = 0; i < total; i++) {
       if (parity[i] === 1) parityMask[i] = oddForbidden;
       else if (parity[i] === 2) parityMask[i] = evenForbidden;
     }
@@ -547,7 +657,7 @@ self.SudokuCore = (function () {
     /* Region-sum: for each cell, list of (lineIdx, segmentKey). Segments are
        maximal runs of the line inside one region — precompute segment groups
        and track their partial fill state. */
-    const rsSegOf = Array.from({ length: N * N }, () => []);
+    const rsSegOf = Array.from({ length: total }, () => []);
     const rsSegs = []; /* { line, region, cells, sum, filled } */
     const rsLineToSegs = regionSums.map(() => []);
     regionSums.forEach((line, li) => {
@@ -572,33 +682,35 @@ self.SudokuCore = (function () {
 
     function bit(v) { return 1 << (v - 1); }
     function pop(m) { let c = 0; while (m) { m &= m - 1; c++; } return c; }
-    function onDiag1(r, c) { return r === c; }
-    function onDiag2(r, c) { return r + c === N - 1; }
+    /* Diagonals only well-defined on square grids. */
+    const isSquare = nRows === nCols;
+    function onDiag1(r, c) { return isSquare && r === c; }
+    function onDiag2(r, c) { return isSquare && r + c === nRows - 1; }
 
     /* Check-then-commit: verify every constraint, then mutate state. */
     function place(i, v) {
-      const r = (i / N) | 0, c = i % N, b = regions[i], mb = bit(v);
+      const r = (i / nCols) | 0, c = i % nCols, b = regions[i], mb = bit(v);
       if (rowM[r] & mb) return false;
       if (colM[c] & mb) return false;
-      if (boxM[b] & mb) return false;
-      if (flags.diagonal) {
+      if (b >= 0 && boxM[b] & mb) return false;
+      if (flags.diagonal && isSquare) {
         if (onDiag1(r,c) && (d1 & mb)) return false;
         if (onDiag2(r,c) && (d2 & mb)) return false;
       }
       if (flags.antiKnight) {
         let bad = false;
-        forEachOffset(r, c, N, KNIGHT_D, j => { if (grid[j] === v) bad = true; });
+        forEachOffset(r, c, nRows, nCols, KNIGHT_D, j => { if (!deleted[j] && grid[j] === v) bad = true; });
         if (bad) return false;
       }
       if (flags.antiKing) {
         let bad = false;
-        forEachOffset(r, c, N, KING_D, j => { if (grid[j] === v) bad = true; });
+        forEachOffset(r, c, nRows, nCols, KING_D, j => { if (!deleted[j] && grid[j] === v) bad = true; });
         if (bad) return false;
       }
       if (flags.antiConsecutive) {
         let bad = false;
-        forEachOffset(r, c, N, [[-1,0],[1,0],[0,-1],[0,1]], j => {
-          if (grid[j] && Math.abs(grid[j] - v) === 1) bad = true;
+        forEachOffset(r, c, nRows, nCols, [[-1,0],[1,0],[0,-1],[0,1]], j => {
+          if (!deleted[j] && grid[j] && Math.abs(grid[j] - v) === 1) bad = true;
         });
         if (bad) return false;
       }
@@ -685,8 +797,9 @@ self.SudokuCore = (function () {
       }
       /* Commit. */
       grid[i] = v;
-      rowM[r] |= mb; colM[c] |= mb; boxM[b] |= mb;
-      if (flags.diagonal) {
+      rowM[r] |= mb; colM[c] |= mb;
+      if (b >= 0) boxM[b] |= mb;
+      if (flags.diagonal && isSquare) {
         if (onDiag1(r,c)) d1 |= mb;
         if (onDiag2(r,c)) d2 |= mb;
       }
@@ -701,10 +814,11 @@ self.SudokuCore = (function () {
     }
 
     function unplace(i, v) {
-      const r = (i / N) | 0, c = i % N, b = regions[i], mb = bit(v);
+      const r = (i / nCols) | 0, c = i % nCols, b = regions[i], mb = bit(v);
       grid[i] = 0;
-      rowM[r] &= ~mb; colM[c] &= ~mb; boxM[b] &= ~mb;
-      if (flags.diagonal) {
+      rowM[r] &= ~mb; colM[c] &= ~mb;
+      if (b >= 0) boxM[b] &= ~mb;
+      if (flags.diagonal && isSquare) {
         if (onDiag1(r,c)) d1 &= ~mb;
         if (onDiag2(r,c)) d2 &= ~mb;
       }
@@ -721,7 +835,10 @@ self.SudokuCore = (function () {
     /* Build the plugin context now that every hot-path variable exists.
        We hand plugins the shared grid + a couple of tiny helpers so they
        can compose bit-masks without duplicating logic. */
-    pluginCtx = { N, regions, grid, bit, pop, full };
+    /* Plugins see rows/cols/deleted/total for grids that aren't classic
+       squares. Legacy plugins that only read `N` keep working because N is
+       the digit-count. */
+    pluginCtx = { N, rows: nRows, cols: nCols, total, deleted, regions, grid, bit, pop, full };
     activePlugins = [];
     for (const plugin of pluginList()) {
       if (!plugin.solverInit) continue;
@@ -730,7 +847,8 @@ self.SudokuCore = (function () {
     }
 
     /* Seed the initial state; reject inconsistent givens up front. */
-    for (let i = 0; i < N * N; i++) {
+    for (let i = 0; i < total; i++) {
+      if (deleted[i]) continue;
       const v = values[i]; if (!v) continue;
       if (!place(i, v)) return { solutions: [], reachedCap: false };
     }
@@ -752,46 +870,53 @@ self.SudokuCore = (function () {
       for (let k = a + 1; k < b; k++) s += vs[k];
       return s;
     }
+    /* Sky/sandwich are meaningful only on rectangular grids without holes;
+       on irregular grids we skip these checks. */
+    const hasHoles = anyHole(deleted);
     function skyOK(r, c, v) {
-      /* only trigger when this placement completes a line. */
-      const row = new Array(N), col = new Array(N);
+      if (hasHoles) return true;
+      const row = new Array(nCols), col = new Array(nRows);
       let rowFull = true, colFull = true;
-      for (let k = 0; k < N; k++) {
-        row[k] = k === c ? v : grid[r*N+k];
-        col[k] = k === r ? v : grid[k*N+c];
+      for (let k = 0; k < nCols; k++) {
+        row[k] = k === c ? v : grid[r*nCols+k];
         if (!row[k]) rowFull = false;
+      }
+      for (let k = 0; k < nRows; k++) {
+        col[k] = k === r ? v : grid[k*nCols+c];
         if (!col[k]) colFull = false;
       }
       if (rowFull) {
-        if (sky.left[r]  && skySeen(row)                !== sky.left[r])  return false;
-        if (sky.right[r] && skySeen(row.slice().reverse()) !== sky.right[r]) return false;
-        if (sandwich.left[r]  && sandwichBetween(row)                !== sandwich.left[r])  return false;
-        if (sandwich.right[r] && sandwichBetween(row.slice().reverse()) !== sandwich.right[r]) return false;
+        if (sky.left  && sky.left[r]  && skySeen(row)                !== sky.left[r])  return false;
+        if (sky.right && sky.right[r] && skySeen(row.slice().reverse()) !== sky.right[r]) return false;
+        if (sandwich.left  && sandwich.left[r]  && sandwichBetween(row)                !== sandwich.left[r])  return false;
+        if (sandwich.right && sandwich.right[r] && sandwichBetween(row.slice().reverse()) !== sandwich.right[r]) return false;
       }
       if (colFull) {
-        if (sky.top[c]    && skySeen(col)                !== sky.top[c])    return false;
-        if (sky.bottom[c] && skySeen(col.slice().reverse()) !== sky.bottom[c]) return false;
-        if (sandwich.top[c]    && sandwichBetween(col)                !== sandwich.top[c])    return false;
-        if (sandwich.bottom[c] && sandwichBetween(col.slice().reverse()) !== sandwich.bottom[c]) return false;
+        if (sky.top    && sky.top[c]    && skySeen(col)                !== sky.top[c])    return false;
+        if (sky.bottom && sky.bottom[c] && skySeen(col.slice().reverse()) !== sky.bottom[c]) return false;
+        if (sandwich.top    && sandwich.top[c]    && sandwichBetween(col)                !== sandwich.top[c])    return false;
+        if (sandwich.bottom && sandwich.bottom[c] && sandwichBetween(col.slice().reverse()) !== sandwich.bottom[c]) return false;
       }
       return true;
     }
 
     function candidates(i) {
-      const r = (i / N) | 0, c = i % N;
-      let used = rowM[r] | colM[c] | boxM[regions[i]];
-      if (flags.diagonal) {
+      const r = (i / nCols) | 0, c = i % nCols;
+      const rg = regions[i];
+      let used = rowM[r] | colM[c] | (rg >= 0 ? boxM[rg] : 0);
+      if (flags.diagonal && isSquare) {
         if (onDiag1(r,c)) used |= d1;
         if (onDiag2(r,c)) used |= d2;
       }
       if (flags.antiKnight) {
-        forEachOffset(r, c, N, KNIGHT_D, j => { if (grid[j]) used |= bit(grid[j]); });
+        forEachOffset(r, c, nRows, nCols, KNIGHT_D, j => { if (!deleted[j] && grid[j]) used |= bit(grid[j]); });
       }
       if (flags.antiKing) {
-        forEachOffset(r, c, N, KING_D, j => { if (grid[j]) used |= bit(grid[j]); });
+        forEachOffset(r, c, nRows, nCols, KING_D, j => { if (!deleted[j] && grid[j]) used |= bit(grid[j]); });
       }
       if (flags.antiConsecutive) {
-        forEachOffset(r, c, N, [[-1,0],[1,0],[0,-1],[0,1]], j => {
+        forEachOffset(r, c, nRows, nCols, [[-1,0],[1,0],[0,-1],[0,1]], j => {
+          if (deleted[j]) return;
           const gv = grid[j]; if (!gv) return;
           if (gv > 1) used |= bit(gv - 1);
           if (gv < N) used |= bit(gv + 1);
@@ -888,34 +1013,37 @@ self.SudokuCore = (function () {
        whole solution is rejected — that keeps the pair-uniqueness rule
        enforced globally, not just where the user painted. */
     const spectradokuActive = Array.prototype.some.call(rainbow, v => !!v);
-    function solveColorPartition(digits) {
-      const total = N * N;
-      const cols = new Int8Array(total);
-      for (let i = 0; i < total; i++) cols[i] = rainbow[i];
-      const rM = new Int32Array(N);
-      const cM = new Int32Array(N);
-      const bM = new Int32Array(N);
+    function solveColorPartition(digitsArr) {
+      const totalC = nRows * nCols;
+      const cols = new Int8Array(totalC);
+      for (let i = 0; i < totalC; i++) cols[i] = rainbow[i];
+      const rM = new Int32Array(nRows);
+      const cM = new Int32Array(nCols);
+      const bM = new Int32Array(regionCount);
       const dM = new Int32Array(N + 1);
       /* Seed with user-painted colors; reject inconsistent input. */
-      for (let i = 0; i < total; i++) {
+      for (let i = 0; i < totalC; i++) {
+        if (deleted[i]) continue;
         const co = cols[i]; if (!co) continue;
-        const r = (i / N) | 0, c = i % N, b = regions[i], cb = bit(co);
+        const r = (i / nCols) | 0, c = i % nCols, b = regions[i], cb = bit(co);
         if (rM[r] & cb) return null;
         if (cM[c] & cb) return null;
-        if (bM[b] & cb) return null;
-        const d = digits[i];
+        if (b >= 0 && bM[b] & cb) return null;
+        const d = digitsArr[i];
         if (d && (dM[d] & cb)) return null;
-        rM[r] |= cb; cM[c] |= cb; bM[b] |= cb;
+        rM[r] |= cb; cM[c] |= cb;
+        if (b >= 0) bM[b] |= cb;
         if (d) dM[d] |= cb;
       }
       function cands(i) {
-        const r = (i / N) | 0, c = i % N, b = regions[i], d = digits[i];
-        const used = rM[r] | cM[c] | bM[b] | (d ? dM[d] : 0);
+        const r = (i / nCols) | 0, c = i % nCols, b = regions[i], d = digitsArr[i];
+        const used = rM[r] | cM[c] | (b >= 0 ? bM[b] : 0) | (d ? dM[d] : 0);
         return (~used) & full;
       }
       function search() {
         let best = -1, bestCnt = N + 1, bestMask = 0;
-        for (let i = 0; i < total; i++) {
+        for (let i = 0; i < totalC; i++) {
+          if (deleted[i]) continue;
           if (cols[i]) continue;
           const m = cands(i);
           const cnt = pop(m);
@@ -923,17 +1051,19 @@ self.SudokuCore = (function () {
           if (cnt < bestCnt) { bestCnt = cnt; best = i; bestMask = m; if (cnt === 1) break; }
         }
         if (best === -1) return true;
-        const r = (best / N) | 0, c = best % N, b = regions[best], d = digits[best];
+        const r = (best / nCols) | 0, c = best % nCols, b = regions[best], d = digitsArr[best];
         let m = bestMask;
         while (m) {
           const cb = m & -m;
           const co = Math.log2(cb) + 1;
           cols[best] = co;
-          rM[r] |= cb; cM[c] |= cb; bM[b] |= cb;
+          rM[r] |= cb; cM[c] |= cb;
+          if (b >= 0) bM[b] |= cb;
           if (d) dM[d] |= cb;
           if (search()) return true;
           cols[best] = 0;
-          rM[r] &= ~cb; cM[c] &= ~cb; bM[b] &= ~cb;
+          rM[r] &= ~cb; cM[c] &= ~cb;
+          if (b >= 0) bM[b] &= ~cb;
           if (d) dM[d] &= ~cb;
           m &= m - 1;
         }
@@ -948,7 +1078,8 @@ self.SudokuCore = (function () {
     function backtrack() {
       if (reachedCap) return;
       let best = -1, bestCnt = N + 1, bestMask = 0;
-      for (let i = 0; i < N * N; i++) {
+      for (let i = 0; i < total; i++) {
+        if (deleted[i]) continue;
         if (grid[i]) continue;
         const m = candidates(i);
         const cnt = pop(m);
@@ -957,18 +1088,25 @@ self.SudokuCore = (function () {
       }
       if (best === -1) {
         /* Full grid. Skyscraper/Sandwich full-line checks already enforced
-           along the way, but verify to be safe. */
-        for (let r = 0; r < N; r++) {
-          const row = [], col = [];
-          for (let k = 0; k < N; k++) { row.push(grid[r*N+k]); col.push(grid[k*N+r]); }
-          if (sky.left[r]  && skySeen(row)                !== sky.left[r])  return;
-          if (sky.right[r] && skySeen(row.slice().reverse()) !== sky.right[r]) return;
-          if (sky.top[r]    && skySeen(col)                !== sky.top[r])    return;
-          if (sky.bottom[r] && skySeen(col.slice().reverse()) !== sky.bottom[r]) return;
-          if (sandwich.left[r]  && sandwichBetween(row) !== sandwich.left[r])  return;
-          if (sandwich.right[r] && sandwichBetween(row) !== sandwich.right[r]) return;
-          if (sandwich.top[r]    && sandwichBetween(col) !== sandwich.top[r])    return;
-          if (sandwich.bottom[r] && sandwichBetween(col) !== sandwich.bottom[r]) return;
+           along the way, but verify to be safe. Only meaningful on
+           hole-free rectangles. */
+        if (!hasHoles) {
+          for (let r = 0; r < nRows; r++) {
+            const row = [];
+            for (let k = 0; k < nCols; k++) row.push(grid[r*nCols+k]);
+            if (sky.left  && sky.left[r]  && skySeen(row)                !== sky.left[r])  return;
+            if (sky.right && sky.right[r] && skySeen(row.slice().reverse()) !== sky.right[r]) return;
+            if (sandwich.left  && sandwich.left[r]  && sandwichBetween(row) !== sandwich.left[r])  return;
+            if (sandwich.right && sandwich.right[r] && sandwichBetween(row.slice().reverse()) !== sandwich.right[r]) return;
+          }
+          for (let c = 0; c < nCols; c++) {
+            const col = [];
+            for (let k = 0; k < nRows; k++) col.push(grid[k*nCols+c]);
+            if (sky.top    && sky.top[c]    && skySeen(col)                !== sky.top[c])    return;
+            if (sky.bottom && sky.bottom[c] && skySeen(col.slice().reverse()) !== sky.bottom[c]) return;
+            if (sandwich.top    && sandwich.top[c]    && sandwichBetween(col) !== sandwich.top[c])    return;
+            if (sandwich.bottom && sandwich.bottom[c] && sandwichBetween(col.slice().reverse()) !== sandwich.bottom[c]) return;
+          }
         }
         if (solutions.length >= SOL_CAP) { reachedCap = true; return; }
         const digitSnap = Uint8Array.from(grid);
@@ -982,7 +1120,7 @@ self.SudokuCore = (function () {
         solutions.push({ values: digitSnap, colors: colorSnap });
         return;
       }
-      const r = (best / N) | 0, c = best % N;
+      const r = (best / nCols) | 0, c = best % nCols;
       let m = bestMask;
       while (m && !reachedCap) {
         const b = m & -m;
@@ -1027,9 +1165,23 @@ self.SudokuCore = (function () {
   }
   function serialize(p) {
     const out = { N: p.N, boxR: p.boxR, boxC: p.boxC };
+    const nRows = p.rows != null ? p.rows : p.N;
+    const nCols = p.cols != null ? p.cols : p.N;
+    const digits = p.digits != null ? p.digits : p.N;
+    /* Emit shape only when it deviates from the classic N×N default. */
+    if (nRows !== p.N) out.rows = nRows;
+    if (nCols !== p.N) out.cols = nCols;
+    if (digits !== defaultDigits(nRows, nCols)) out.digits = digits;
+    if (p.deleted) {
+      const del = [];
+      for (let i = 0; i < p.deleted.length; i++) if (p.deleted[i]) del.push(i);
+      if (del.length) out.deleted = del;
+    }
     if (anyNonzero(p.values)) out.values = [...p.values];
     if (anyNonzero(p.given))  out.given  = [...p.given];
-    const defRegions = rectRegions(p.N, p.boxR, p.boxC);
+    const defRegions = rectRegions(nRows, nCols, p.boxR, p.boxC);
+    /* Mark deleted cells' region as -1 in the default so comparison ignores them. */
+    if (p.deleted) for (let i = 0; i < defRegions.length; i++) if (p.deleted[i]) defRegions[i] = -1;
     if (!equalRegions(p.regions, defRegions)) out.regions = [...p.regions];
     if (p.cages && p.cages.length)       out.cages   = p.cages;
     if (p.thermos && p.thermos.length)   out.thermos = p.thermos;
@@ -1068,10 +1220,16 @@ self.SudokuCore = (function () {
   }
   function deserialize(s) {
     const j = typeof s === 'string' ? JSON.parse(s) : s;
-    const p = newPuzzle(j.N, j.boxR, j.boxC);
-    p.values.set(j.values || []);
-    p.given.set(j.given || []);
-    if (j.regions && j.regions.length === j.N * j.N) p.regions = Int8Array.from(j.regions);
+    const rows   = j.rows   != null ? j.rows   : j.N;
+    const cols   = j.cols   != null ? j.cols   : j.N;
+    const digits = j.digits != null ? j.digits : defaultDigits(rows, cols);
+    const total  = rows * cols;
+    const deletedArr = new Uint8Array(total);
+    if (Array.isArray(j.deleted)) for (const i of j.deleted) if (i >= 0 && i < total) deletedArr[i] = 1;
+    const p = newPuzzle(digits, j.boxR, j.boxC, { rows, cols, digits, deleted: deletedArr });
+    if (j.values && j.values.length === total) p.values.set(j.values);
+    if (j.given  && j.given.length  === total) p.given.set(j.given);
+    if (j.regions && j.regions.length === total) p.regions = Int8Array.from(j.regions);
     p.cages   = (j.cages || []).map(c => ({ cells:[...c.cells], sum: c.sum ?? null }));
     p.thermos = (j.thermos || []).map(t => [...t]);
     p.whispers   = (j.whispers   || []).map(t => [...t]);
@@ -1080,16 +1238,20 @@ self.SudokuCore = (function () {
     p.kropki     = (j.kropki || []).map(d => ({ a: d.a, b: d.b, kind: d.kind }));
     p.compare    = (j.compare || []).map(d => ({ a: d.a, b: d.b, kind: d.kind }));
     p.xv         = (j.xv || []).map(d => ({ a: d.a, b: d.b, kind: d.kind }));
-    if (j.parity && j.parity.length === j.N * j.N) p.parity.set(j.parity);
-    if (j.sky) {
-      p.sky.top.set(j.sky.top || []);       p.sky.bottom.set(j.sky.bottom || []);
-      p.sky.left.set(j.sky.left || []);     p.sky.right.set(j.sky.right || []);
+    if (j.parity && j.parity.length === total) p.parity.set(j.parity);
+    /* Side arrays are cols-sized on top/bottom and rows-sized on left/right;
+       accept legacy N-sized arrays too by falling back to what we have. */
+    function setSides(target, src) {
+      if (!src) return;
+      const copy = (dst, arr) => { if (!arr) return; const n = Math.min(dst.length, arr.length); for (let k = 0; k < n; k++) dst[k] = arr[k]; };
+      copy(target.top,    src.top);
+      copy(target.bottom, src.bottom);
+      copy(target.left,   src.left);
+      copy(target.right,  src.right);
     }
-    if (j.sandwich) {
-      p.sandwich.top.set(j.sandwich.top || []);     p.sandwich.bottom.set(j.sandwich.bottom || []);
-      p.sandwich.left.set(j.sandwich.left || []);   p.sandwich.right.set(j.sandwich.right || []);
-    }
-    if (j.rainbow && j.rainbow.length === j.N * j.N) p.rainbow.set(j.rainbow);
+    setSides(p.sky,      j.sky);
+    setSides(p.sandwich, j.sandwich);
+    if (j.rainbow && j.rainbow.length === total) p.rainbow.set(j.rainbow);
     for (const plugin of pluginList()) {
       if (plugin.deserialize) plugin.deserialize(p, j);
     }
@@ -1100,7 +1262,7 @@ self.SudokuCore = (function () {
   return {
     MIN_N, MAX_N, CHARS,
     digitToChar, charToDigit, isDigitKey,
-    rectRegions, regionsValid,
+    rectRegions, regionsValid, defaultDigits,
     newPuzzle, resize, whisperMin,
     findConflicts, findSolutions,
     serialize, deserialize,

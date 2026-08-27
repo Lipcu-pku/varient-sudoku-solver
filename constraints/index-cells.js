@@ -37,20 +37,24 @@ self.SudokuConstraints.register({
 
   findConflicts(p, ctx) {
     const N = p.N, values = p.values;
-    const col = p.colIndex || new Int8Array(N * N);
-    const row = p.rowIndex || new Int8Array(N * N);
-    for (let i = 0; i < N * N; i++) {
+    const nRows = p.rows != null ? p.rows : N;
+    const nCols = p.cols != null ? p.cols : N;
+    const total = nRows * nCols;
+    const col = p.colIndex || new Int8Array(total);
+    const row = p.rowIndex || new Int8Array(total);
+    for (let i = 0; i < total; i++) {
+      if (p.deleted && p.deleted[i]) continue;
       const v = values[i]; if (!v) continue;
-      const r = (i / N) | 0, c = i % N;
+      const r = (i / nCols) | 0, c = i % nCols;
       if (col[i]) {
         /* Column-index: partner in same row at column (v-1) must equal c+1. */
-        const j = r * N + (v - 1);
+        const j = r * nCols + (v - 1);
         const pv = values[j];
         if (pv && pv !== c + 1) { ctx.conflicts.add(i); ctx.conflicts.add(j); }
       }
       if (row[i]) {
         /* Row-index: partner in same column at row (v-1) must equal r+1. */
-        const j = (v - 1) * N + c;
+        const j = (v - 1) * nCols + c;
         const pv = values[j];
         if (pv && pv !== r + 1) { ctx.conflicts.add(i); ctx.conflicts.add(j); }
       }
@@ -58,31 +62,35 @@ self.SudokuConstraints.register({
   },
 
   solverInit(p, ctx) {
-    const N = ctx.N;
-    const col = p.colIndex || new Int8Array(N * N);
-    const row = p.rowIndex || new Int8Array(N * N);
+    const nRows = ctx.rows != null ? ctx.rows : ctx.N;
+    const nCols = ctx.cols != null ? ctx.cols : ctx.N;
+    const total = ctx.total != null ? ctx.total : nRows * nCols;
+    const col = p.colIndex || new Int8Array(total);
+    const row = p.rowIndex || new Int8Array(total);
     /* Skip the plugin entirely when the puzzle has no marked cells. */
     let any = false;
-    for (let i = 0; i < N * N; i++) if (col[i] || row[i]) { any = true; break; }
+    for (let i = 0; i < total; i++) if (col[i] || row[i]) { any = true; break; }
     if (!any) return null;
     /* Precompute per-row and per-column lists of marked cells so `solverCheck`
        can scan just the relevant peers rather than the whole grid. */
-    const colRow = Array.from({ length: N }, () => []);
-    const rowCol = Array.from({ length: N }, () => []);
-    for (let i = 0; i < N * N; i++) {
-      const r = (i / N) | 0, c = i % N;
+    const colRow = Array.from({ length: nRows }, () => []);
+    const rowCol = Array.from({ length: nCols }, () => []);
+    for (let i = 0; i < total; i++) {
+      if (ctx.deleted && ctx.deleted[i]) continue;
+      const r = (i / nCols) | 0, c = i % nCols;
       if (col[i]) colRow[r].push({ i, c });
       if (row[i]) rowCol[c].push({ i, r });
     }
-    return { col, row, colRow, rowCol };
+    return { col, row, colRow, rowCol, nCols };
   },
 
   solverCheck(p, ctx, h, i, v) {
-    const N = ctx.N, grid = ctx.grid;
-    const r = (i / N) | 0, c = i % N;
+    const grid = ctx.grid;
+    const nCols = h.nCols;
+    const r = (i / nCols) | 0, c = i % nCols;
     /* If this cell is a column-index cell: partner (r, v-1) must equal c+1. */
     if (h.col[i]) {
-      const j = r * N + (v - 1);
+      const j = r * nCols + (v - 1);
       if (j !== i) {
         const pv = grid[j];
         if (pv && pv !== c + 1) return false;
@@ -92,7 +100,7 @@ self.SudokuConstraints.register({
       }
     }
     if (h.row[i]) {
-      const j = (v - 1) * N + c;
+      const j = (v - 1) * nCols + c;
       if (j !== i) {
         const pv = grid[j];
         if (pv && pv !== r + 1) return false;
@@ -120,12 +128,13 @@ self.SudokuConstraints.register({
 
   solverForbid(p, ctx, h, i, used) {
     const N = ctx.N, grid = ctx.grid;
-    const r = (i / N) | 0, c = i % N;
+    const nCols = h.nCols;
+    const r = (i / nCols) | 0, c = i % nCols;
     /* When this cell is marked, forbid v values whose partner is filled with
        a mismatched value. */
     if (h.col[i]) {
       for (let v = 1; v <= N; v++) {
-        const j = r * N + (v - 1);
+        const j = r * nCols + (v - 1);
         if (j === i) {
           if (v !== c + 1) used |= ctx.bit(v);
         } else {
@@ -136,7 +145,7 @@ self.SudokuConstraints.register({
     }
     if (h.row[i]) {
       for (let v = 1; v <= N; v++) {
-        const j = (v - 1) * N + c;
+        const j = (v - 1) * nCols + c;
         if (j === i) {
           if (v !== r + 1) used |= ctx.bit(v);
         } else {

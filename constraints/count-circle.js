@@ -23,12 +23,16 @@ self.SudokuConstraints.register({
 
   findConflicts(p, ctx) {
     const N = p.N, values = p.values;
-    const cc = p.countCircles || new Int8Array(N * N);
+    const nRows = p.rows != null ? p.rows : N;
+    const nCols = p.cols != null ? p.cols : N;
+    const total = nRows * nCols;
+    const cc = p.countCircles || new Int8Array(total);
     /* Count each digit's occurrences within circled cells. */
     const count = new Int32Array(N + 1);
     const cellsByDigit = Array.from({ length: N + 1 }, () => []);
     let totalCircles = 0;
-    for (let i = 0; i < N * N; i++) {
+    for (let i = 0; i < total; i++) {
+      if (p.deleted && p.deleted[i]) continue;
       if (!cc[i]) continue;
       totalCircles++;
       const v = values[i]; if (!v) continue;
@@ -46,15 +50,16 @@ self.SudokuConstraints.register({
   },
 
   solverInit(p, ctx) {
-    const cc = p.countCircles || new Int8Array(ctx.N * ctx.N);
-    let total = 0;
-    for (let i = 0; i < cc.length; i++) if (cc[i]) total++;
-    if (!total) return null;
+    const gridTotal = ctx.total != null ? ctx.total : ctx.N * ctx.N;
+    const cc = p.countCircles || new Int8Array(gridTotal);
+    let count = 0;
+    for (let i = 0; i < cc.length; i++) if (cc[i]) count++;
+    if (!count) return null;
     return {
       cc,
-      totalCircles: total,
+      totalCircles: count,
       count: new Int32Array(ctx.N + 1),
-      remaining: total,   /* circled cells still empty */
+      remaining: count,   /* circled cells still empty */
     };
   },
 

@@ -91,13 +91,13 @@
     };
   }
 
-  /* Duplicate of SudokuCore.rectRegions — kept local so this file loads
-     even if sudoku-core.js is unavailable (unusual, but avoids coupling). */
-  function rectRegions(N, boxR, boxC) {
-    const boxesPerRow = N / boxC;
-    const out = new Int8Array(N * N);
-    for (let i = 0; i < N * N; i++) {
-      const r = (i / N) | 0, c = i % N;
+  /* Default rectangular region layout for a rows×cols grid tiled by
+     boxR × boxC boxes. Kept local so this module can load standalone. */
+  function rectRegions(rows, cols, boxR, boxC) {
+    const boxesPerRow = Math.ceil(cols / boxC);
+    const out = new Int8Array(rows * cols);
+    for (let i = 0; i < rows * cols; i++) {
+      const r = (i / cols) | 0, c = i % cols;
       out[i] = Math.floor(r / boxR) * boxesPerRow + Math.floor(c / boxC);
     }
     return out;
@@ -121,35 +121,64 @@
     opts = opts || {};
     const lang = opts.lang === 'zh' ? 'zh' : 'en';
     const N = p.N;
-    const total = N * N;
-    /* `dropped` — constraints whose logic isn't enforced by SudokuPad.
-       Rendered visually via decorative overlays; still worth flagging so
-       the player knows to read the rules pane. */
+    const nRows = p.rows != null ? p.rows : N;
+    const nCols = p.cols != null ? p.cols : N;
+    const total = nRows * nCols;
+    /* SudokuPad's fpuzzles renderer only handles square grids. For anything
+       else we pad to a bounding square and mark the out-of-shape cells with
+       a decorative overlay + explanation. */
+    const size = Math.max(nRows, nCols);
+    const nonSquare = nRows !== nCols;
+    const anyDeleted = p.deleted && Array.prototype.some.call(p.deleted, v => v);
+    const outsideCellStr = [];  /* R{r}C{c} strings of cells to mark "outside" */
     const dropped = new Set();
     const rules = ruleBlurbs(N);
     const legend = [];
 
     /* --- grid: values / givens / region overrides --- */
-    const grid = Array.from({ length: N }, () => Array.from({ length: N }, () => ({})));
-    const defRegions = rectRegions(N, p.boxR, p.boxC);
+    const grid = Array.from({ length: size }, () => Array.from({ length: size }, () => ({})));
+    const defRegions = rectRegions(nRows, nCols, p.boxR, p.boxC);
     let regionsDiverge = false;
     if (p.regions) {
       for (let i = 0; i < total; i++) {
+        if (p.deleted && p.deleted[i]) continue;
         if (p.regions[i] !== defRegions[i]) { regionsDiverge = true; break; }
       }
     }
+    /* Real cells inside the internal bounding rectangle. */
     for (let i = 0; i < total; i++) {
-      const r = (i / N) | 0, c = i % N;
+      const r = (i / nCols) | 0, c = i % nCols;
       const cell = grid[r][c];
+      if (p.deleted && p.deleted[i]) {
+        outsideCellStr.push(RC(r + 1, c + 1));
+        continue;
+      }
       const v = p.values[i];
       if (v) {
         cell.value = v;
         if (p.given[i]) cell.given = true;
       }
-      if (regionsDiverge) cell.region = p.regions[i];
+      if (regionsDiverge && p.regions[i] >= 0) cell.region = p.regions[i];
+    }
+    /* Padding cells outside the internal rectangle also get flagged. */
+    for (let r = 0; r < size; r++) {
+      for (let c = 0; c < size; c++) {
+        if (r < nRows && c < nCols) continue;
+        outsideCellStr.push(RC(r + 1, c + 1));
+      }
     }
 
-    const out = { size: N, grid };
+    const out = { size, grid };
+    if (nonSquare || anyDeleted) {
+      dropped.add('grid-shape');
+      legend.push(lang === 'zh'
+        ? '灰色阴影格不在数独形状之内 — 请留空并忽略。'
+        : 'Grey shaded cells are outside the puzzle shape — leave them blank and ignore them.');
+      /* Cover each outside cell with a translucent grey square so it reads
+         as "not part of the puzzle" even though SudokuPad still shows the
+         underlying input. */
+      out._outsideCells = outsideCellStr;
+    }
 
     /* --- global flags --- */
     if (p.flags) {
@@ -401,6 +430,23 @@
       }
       if (any) { dropped.add('row-index'); legend.push(rules.indexRow[lang]); }
     }
+    /* Outside-shape cells: paint an opaque grey underlay so the player
+       reads them as "not part of the puzzle". Native fpuzzles renders
+       `text[]` with a big filled square block character to achieve the
+       same effect without needing the newer `underlay` field. */
+    if (out._outsideCells && out._outsideCells.length) {
+      for (const cell of out._outsideCells) {
+        texts.push({
+          cells: [cell],
+          value: '■',
+          fontC: '#bfbfbf',
+          size: 1.2,
+          isNewConstraint: true,
+        });
+      }
+      delete out._outsideCells;
+    }
+
     if (circles.length) out.circle = circles;
     if (texts.length)   out.text   = texts;
 

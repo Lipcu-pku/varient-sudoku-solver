@@ -41,7 +41,7 @@ self.SudokuConstraints.register({
     const quads = p.quadruples || [];
     if (!quads.length) return null;
     const N = ctx.N;
-    const quadOf = Array.from({ length: N * N }, () => []);
+    const quadOf = Array.from({ length: ctx.total != null ? ctx.total : N * N }, () => []);
     quads.forEach(q => {
       const r = q.r, c = q.c;
       if (r <= 0 || r >= N || c <= 0 || c >= N) return;

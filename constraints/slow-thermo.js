@@ -32,7 +32,7 @@ self.SudokuConstraints.register({
     const list = p.slowThermos || [];
     if (!list.length) return null;
     const N = ctx.N;
-    const lookup = Array.from({ length: N * N }, () => []);
+    const lookup = Array.from({ length: ctx.total != null ? ctx.total : N * N }, () => []);
     list.forEach((t, ti) => t.forEach((i, pos) => lookup[i].push([ti, pos])));
     const vals = list.map(t => new Uint8Array(t.length));
     return { list, lookup, vals };

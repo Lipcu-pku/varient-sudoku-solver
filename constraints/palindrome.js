@@ -29,7 +29,7 @@ self.SudokuConstraints.register({
     const lines = p.palindromes || [];
     if (!lines.length) return null;
     const N = ctx.N;
-    const mirror = Array.from({ length: N * N }, () => []);
+    const mirror = Array.from({ length: ctx.total != null ? ctx.total : N * N }, () => []);
     for (const line of lines) {
       const len = line.length;
       for (let k = 0; k < (len >> 1); k++) {

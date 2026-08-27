@@ -45,9 +45,9 @@ self.SudokuConstraints.register({
   solverInit(p, ctx) {
     const list = p.betweenLines || [];
     if (!list.length) return null;
-    const N = ctx.N;
+    const total = ctx.total != null ? ctx.total : ctx.N * ctx.N;
     /* For each cell store [{ lineIdx, role, k }], where role is 'a', 'b', 'm'. */
-    const lookup = Array.from({ length: N * N }, () => []);
+    const lookup = Array.from({ length: total }, () => []);
     list.forEach((line, li) => {
       if (line.length < 2) return;
       lookup[line[0]].push({ li, role: 'a' });

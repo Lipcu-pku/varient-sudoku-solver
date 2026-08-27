@@ -29,7 +29,7 @@ self.SudokuConstraints.register({
     const lines = p.parityLines || [];
     if (!lines.length) return null;
     const N = ctx.N;
-    const nbrs = Array.from({ length: N * N }, () => []);
+    const nbrs = Array.from({ length: ctx.total != null ? ctx.total : N * N }, () => []);
     for (const line of lines) {
       for (let k = 1; k < line.length; k++) {
         nbrs[line[k-1]].push(line[k]);

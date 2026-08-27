@@ -23,7 +23,12 @@ self.SudokuConstraints.register({
   findConflicts(p, ctx) {
     if (!p.flags || !p.flags.disjoint) return;
     const { N, boxR, boxC, values } = p;
-    /* Group cells by (r % boxR, c % boxC) — the "position within a box". */
+    const nRows = p.rows != null ? p.rows : N;
+    const nCols = p.cols != null ? p.cols : N;
+    /* Only makes sense on a classic square grid with uniform rectangular
+       boxes and no holes; otherwise skip entirely. */
+    if (nRows !== nCols || nRows !== N) return;
+    if (p.deleted) { for (let k = 0; k < p.deleted.length; k++) if (p.deleted[k]) return; }
     const groups = Array.from({ length: boxR * boxC }, () => []);
     for (let i = 0; i < N * N; i++) {
       const r = (i / N) | 0, c = i % N;
@@ -42,6 +47,10 @@ self.SudokuConstraints.register({
   solverInit(p, ctx) {
     if (!p.flags || !p.flags.disjoint) return null;
     const N = ctx.N, boxR = p.boxR, boxC = p.boxC;
+    const nRows = ctx.rows != null ? ctx.rows : N;
+    const nCols = ctx.cols != null ? ctx.cols : N;
+    if (nRows !== nCols || nRows !== N) return null;
+    if (ctx.deleted) { for (let k = 0; k < ctx.deleted.length; k++) if (ctx.deleted[k]) return null; }
     const total = N * N;
     const groupOf = new Int32Array(total);
     for (let i = 0; i < total; i++) {

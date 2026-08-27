@@ -41,7 +41,7 @@ self.SudokuConstraints.register({
     const lines = p.renbans || [];
     if (!lines.length) return null;
     const N = ctx.N;
-    const lookup = Array.from({ length: N * N }, () => []);
+    const lookup = Array.from({ length: ctx.total != null ? ctx.total : N * N }, () => []);
     lines.forEach((line, ri) => { for (const i of line) lookup[i].push(ri); });
     return {
       lines,

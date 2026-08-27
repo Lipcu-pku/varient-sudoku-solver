@@ -16,21 +16,36 @@
  * hot path via a per-side line lookup.
  */
 (function () {
-  function makeSides(N) {
+  function makeSides(rowsOrN, colsMaybe) {
+    /* Legacy: makeSides(N) → all sides N-long. New: makeSides(rows, cols)
+       → top/bottom sized cols, left/right sized rows. */
+    let rows, cols;
+    if (colsMaybe === undefined) { rows = cols = rowsOrN; }
+    else                          { rows = rowsOrN; cols = colsMaybe; }
     return {
-      top: new Uint8Array(N), bottom: new Uint8Array(N),
-      left: new Uint8Array(N), right: new Uint8Array(N),
+      top: new Uint8Array(cols), bottom: new Uint8Array(cols),
+      left: new Uint8Array(rows), right: new Uint8Array(rows),
     };
   }
 
   /* Cells for one line in reading-order from the outer clue. Returns an
-     array of N cell indices. */
-  function lineCells(side, idx, N) {
-    const out = new Array(N);
-    if (side === 'top')         { for (let r = 0; r < N; r++) out[r] = r * N + idx; }
-    else if (side === 'bottom') { for (let r = 0; r < N; r++) out[r] = (N - 1 - r) * N + idx; }
-    else if (side === 'left')   { for (let c = 0; c < N; c++) out[c] = idx * N + c; }
-    else                        { for (let c = 0; c < N; c++) out[c] = idx * N + (N - 1 - c); }
+     array of cell indices along that line (may be shorter than the full
+     row/col if deleted cells are skipped). */
+  function lineCells(side, idx, rowsOrN, colsMaybe, deletedMaybe) {
+    let rows, cols, deleted;
+    if (colsMaybe === undefined) { rows = cols = rowsOrN; deleted = null; }
+    else if (typeof colsMaybe === 'object') { rows = cols = rowsOrN; deleted = colsMaybe; }
+    else { rows = rowsOrN; cols = colsMaybe; deleted = deletedMaybe || null; }
+    const out = [];
+    if (side === 'top') {
+      for (let r = 0; r < rows; r++) { const i = r * cols + idx; if (!deleted || !deleted[i]) out.push(i); }
+    } else if (side === 'bottom') {
+      for (let r = 0; r < rows; r++) { const i = (rows - 1 - r) * cols + idx; if (!deleted || !deleted[i]) out.push(i); }
+    } else if (side === 'left') {
+      for (let c = 0; c < cols; c++) { const i = idx * cols + c; if (!deleted || !deleted[i]) out.push(i); }
+    } else {
+      for (let c = 0; c < cols; c++) { const i = idx * cols + (cols - 1 - c); if (!deleted || !deleted[i]) out.push(i); }
+    }
     return out;
   }
 
@@ -39,29 +54,44 @@
   self.SudokuConstraints.register({
     id: 'xsums',
 
-    newFields(p)      { p.xsum = makeSides(p.N); },
+    newFields(p) {
+      const nRows = p.rows != null ? p.rows : p.N;
+      const nCols = p.cols != null ? p.cols : p.N;
+      p.xsum = makeSides(nRows, nCols);
+    },
     serialize(p)      {
-      const x = p.xsum || makeSides(p.N);
+      const nRows = p.rows != null ? p.rows : p.N;
+      const nCols = p.cols != null ? p.cols : p.N;
+      const x = p.xsum || makeSides(nRows, nCols);
       return { xsum: {
         top:[...x.top], bottom:[...x.bottom], left:[...x.left], right:[...x.right],
       }};
     },
     deserialize(p, j) {
-      p.xsum = makeSides(p.N);
+      const nRows = p.rows != null ? p.rows : p.N;
+      const nCols = p.cols != null ? p.cols : p.N;
+      p.xsum = makeSides(nRows, nCols);
       if (j.xsum) {
-        p.xsum.top.set(j.xsum.top || []);       p.xsum.bottom.set(j.xsum.bottom || []);
-        p.xsum.left.set(j.xsum.left || []);     p.xsum.right.set(j.xsum.right || []);
+        const copy = (dst, src) => { if (!src) return; const n = Math.min(dst.length, src.length); for (let k = 0; k < n; k++) dst[k] = src[k]; };
+        copy(p.xsum.top, j.xsum.top);
+        copy(p.xsum.bottom, j.xsum.bottom);
+        copy(p.xsum.left, j.xsum.left);
+        copy(p.xsum.right, j.xsum.right);
       }
     },
 
     findConflicts(p, ctx) {
       const N = p.N, values = p.values;
-      const clues = p.xsum || makeSides(N);
+      const nRows = p.rows != null ? p.rows : N;
+      const nCols = p.cols != null ? p.cols : N;
+      const clues = p.xsum || makeSides(nRows, nCols);
       for (const side of ['top','bottom','left','right']) {
         const arr = clues[side];
-        for (let idx = 0; idx < N; idx++) {
+        if (!arr) continue;
+        for (let idx = 0; idx < arr.length; idx++) {
           const clue = arr[idx]; if (!clue) continue;
-          const cells = lineCells(side, idx, N);
+          const cells = lineCells(side, idx, nRows, nCols, p.deleted);
+          if (!cells.length) continue;
           const first = values[cells[0]];
           if (!first) continue;   /* can't check yet */
           const X = first;
@@ -83,18 +113,23 @@
 
     solverInit(p, ctx) {
       const N = ctx.N;
-      const clues = p.xsum || makeSides(N);
-      /* Pack every clued line into: { cells:[N], clue }. */
+      const nRows = ctx.rows != null ? ctx.rows : N;
+      const nCols = ctx.cols != null ? ctx.cols : N;
+      const total = ctx.total != null ? ctx.total : nRows * nCols;
+      const clues = p.xsum || makeSides(nRows, nCols);
+      /* Pack every clued line into: { cells:[…], clue }. */
       const lines = [];
       for (const side of ['top','bottom','left','right']) {
-        for (let idx = 0; idx < N; idx++) {
-          if (!clues[side][idx]) continue;
-          lines.push({ cells: lineCells(side, idx, N), clue: clues[side][idx] });
+        const arr = clues[side]; if (!arr) continue;
+        for (let idx = 0; idx < arr.length; idx++) {
+          if (!arr[idx]) continue;
+          const cells = lineCells(side, idx, nRows, nCols, ctx.deleted);
+          if (cells.length) lines.push({ cells, clue: arr[idx] });
         }
       }
       if (!lines.length) return null;
       /* Per cell: list of (lineIdx, pos). */
-      const lookup = Array.from({ length: N * N }, () => []);
+      const lookup = Array.from({ length: total }, () => []);
       lines.forEach((L, li) => L.cells.forEach((c, pos) => lookup[c].push([li, pos])));
       return { lines, lookup };
     },

@@ -106,6 +106,7 @@ window.SudokuApp = (function () {
       sequence:  { en: 'Sequence',     zh: '等差线' },
       xsum:      { en: 'X-Sums',       zh: 'X 和' },
       countCircle:{ en: 'Count Circle', zh: '计数圆' },
+      grid:      { en: '✂ Grid shape', zh: '✂ 网格形状' },
     },
     flag: {
       diagonal:        { en: 'X (diagonals)',     zh: 'X（对角）' },
@@ -198,6 +199,10 @@ window.SudokuApp = (function () {
       countCircle: {
         en: 'Click or drag cells to add or remove circles. If digit v appears on any circled cell, exactly v circled cells contain v.',
         zh: '点击或拖动格子添加或移除圆圈。若数字 v 出现在任一圆圈内，则恰好有 v 个圆圈内含 v。',
+      },
+      grid: {
+        en: 'Set rows, columns, and digit count, then Apply. Click cells to toggle them as deleted (holes). After applying an irregular shape you should repaint the regions.',
+        zh: '设置行数、列数、数字个数，然后按"应用"。点击格子可将其标记为删除（空缺）。应用不规则形状后应重画宫格。',
       },
     },
     solve:   { en: 'Solve',           zh: '求解' },
@@ -484,7 +489,7 @@ window.SudokuApp = (function () {
   /* Tool tabs are grouped by category so related tools sit on the same row.
      Each group renders as its own centered pill row inside `.tool-tabs-wrap`. */
   const TOOL_GROUPS = [
-    { label: { en: 'Basic',      zh: '基础'   }, tools: ['digit', 'region', 'rainbow', 'cage', 'extraRegion'] },
+    { label: { en: 'Basic',      zh: '基础'   }, tools: ['digit', 'region', 'rainbow', 'cage', 'extraRegion', 'grid'] },
     { label: { en: 'Lines',      zh: '线约束' }, tools: ['thermo', 'slowThermo', 'whisper', 'regionSum', 'modular', 'renban', 'palindrome', 'entropic', 'parityLine', 'between', 'lockout', 'sequence'] },
     { label: { en: 'Arrows',     zh: '箭头'   }, tools: ['arrow', 'hitpoint'] },
     { label: { en: 'Edge clues', zh: '外圈线索' }, tools: ['sky', 'sandwich', 'littleKiller', 'xsum'] },
@@ -562,6 +567,129 @@ window.SudokuApp = (function () {
     if (state.tool === 'extraRegion') fillExtraRegionPanel(p);
     if (state.tool === 'xsum')      fillXSumPanel(p);
     if (state.tool === 'countCircle') fillCountCirclePanel(p);
+    if (state.tool === 'grid')      fillGridPanel(p);
+  }
+
+  function fillGridPanel(p) {
+    const pz = state.puzzle;
+    const nRows = pz.rows != null ? pz.rows : pz.N;
+    const nCols = pz.cols != null ? pz.cols : pz.N;
+    const digits = pz.digits != null ? pz.digits : pz.N;
+    /* Inputs are read on Apply — editing them doesn't rebuild until then,
+       so the user can iterate without losing state. */
+    const rowsInp = el('input');
+    rowsInp.type = 'number'; rowsInp.min = 2; rowsInp.max = 16; rowsInp.value = nRows;
+    rowsInp.style.width = '4rem';
+    const colsInp = el('input');
+    colsInp.type = 'number'; colsInp.min = 2; colsInp.max = 16; colsInp.value = nCols;
+    colsInp.style.width = '4rem';
+    const digitsInp = el('input');
+    digitsInp.type = 'number'; digitsInp.min = 2; digitsInp.max = 16; digitsInp.value = digits;
+    digitsInp.style.width = '4rem';
+    p.append(
+      el('span', null, L({ en: 'Rows', zh: '行' }) + ':'), rowsInp,
+      el('span', null, '× ' + L({ en: 'Cols', zh: '列' }) + ':'), colsInp,
+      el('span', null, ' · ' + L({ en: 'Digits', zh: '数字' }) + ':'), digitsInp,
+    );
+    p.appendChild(btn({ en: 'Apply', zh: '应用' }, {
+      onClick: () => {
+        const R = Number(rowsInp.value) | 0;
+        const C = Number(colsInp.value) | 0;
+        const D = Number(digitsInp.value) | 0;
+        if (R < 2 || R > 16 || C < 2 || C > 16 || D < 2 || D > 16) return;
+        applyGridShape(R, C, D);
+      },
+    }));
+    p.appendChild(btn({ en: 'Reset shape', zh: '重置形状' }, {
+      secondary: true,
+      onClick: () => {
+        const N = pz.N;
+        applyGridShape(N, N, N);
+      },
+    }));
+    const del = (pz.deleted && Array.prototype.filter.call(pz.deleted, x => x).length) || 0;
+    p.appendChild(el('span', 'hint', L({
+      en: `Deleted cells: ${del}. Click a cell to toggle.`,
+      zh: `已删除格子：${del}。点击格子可切换删除状态。`,
+    })));
+  }
+
+  /* Apply new rows/cols/digits, preserving as much of the current puzzle
+     as fits. Deleted cells stay deleted when shape only shrinks in a
+     dimension the deleted cell falls outside of. */
+  function applyGridShape(rows, cols, digits) {
+    const oldP = state.puzzle;
+    const oldRows = oldP.rows != null ? oldP.rows : oldP.N;
+    const oldCols = oldP.cols != null ? oldP.cols : oldP.N;
+    const boxR = oldP.boxR || 3, boxC = oldP.boxC || 3;
+    /* Carry over the deleted bitmap where it still fits. */
+    const carry = new Uint8Array(rows * cols);
+    if (oldP.deleted) {
+      for (let r = 0; r < Math.min(rows, oldRows); r++) {
+        for (let c = 0; c < Math.min(cols, oldCols); c++) {
+          if (oldP.deleted[r * oldCols + c]) carry[r * cols + c] = 1;
+        }
+      }
+    }
+    state.puzzle = Core.newPuzzle(digits, boxR, boxC, { rows, cols, digits, deleted: carry });
+    /* Clear all drafts. */
+    state.cageDraft = { cells: [], sum: '' };
+    state.thermoDraft = { cells: [] };
+    state.lineDraft = { cells: [] };
+    state.arrowDraft = { phase: 0, base: [], path: [] };
+    state.quadDraft = { digits: '' };
+    state.kropkiFirst = -1;
+    state.compareFirst = -1;
+    state.xvFirst = -1;
+    state.rainbowPick = 1;
+    state.lkSelected = null;
+    state.lkDraft = { dir: null, sum: '' };
+    state.lkNotice = '';
+    state.pencilmarkOn = false;
+    state.pencilmarkStats = null;
+    /* If any cell is deleted, the default rectangular regions are wrong —
+       jump the user straight to the region editor. */
+    if (Array.prototype.some.call(carry, v => v)) state.tool = 'region';
+    rebuild();
+  }
+
+  function toggleDeletedCell(i) {
+    const pz = state.puzzle;
+    if (!pz.deleted) return;
+    pz.deleted[i] = pz.deleted[i] ? 0 : 1;
+    if (pz.deleted[i]) {
+      /* Clean up references to this cell. */
+      pz.values[i] = 0;
+      pz.given[i] = 0;
+      pz.regions[i] = -1;
+      if (pz.parity) pz.parity[i] = 0;
+      if (pz.rainbow) pz.rainbow[i] = 0;
+      if (pz.colIndex) pz.colIndex[i] = 0;
+      if (pz.rowIndex) pz.rowIndex[i] = 0;
+      if (pz.countCircles) pz.countCircles[i] = 0;
+      const dropFromCells = (arr) => arr.filter(entry => !entry.cells.includes(i));
+      const dropFromLines = (arr) => arr.map(l => l.filter(x => x !== i)).filter(l => l.length >= 2);
+      pz.cages = dropFromCells(pz.cages);
+      pz.thermos     = dropFromLines(pz.thermos);
+      pz.whispers    = dropFromLines(pz.whispers   || []);
+      pz.regionSums  = dropFromLines(pz.regionSums || []);
+      pz.modulars    = dropFromLines(pz.modulars   || []);
+      pz.renbans     = dropFromLines(pz.renbans    || []);
+      pz.palindromes = dropFromLines(pz.palindromes|| []);
+      pz.entropics   = dropFromLines(pz.entropics  || []);
+      pz.parityLines = dropFromLines(pz.parityLines|| []);
+      pz.betweenLines= dropFromLines(pz.betweenLines|| []);
+      pz.slowThermos = dropFromLines(pz.slowThermos|| []);
+      pz.lockoutLines= dropFromLines(pz.lockoutLines|| []);
+      pz.sequenceLines=dropFromLines(pz.sequenceLines|| []);
+      pz.kropki  = (pz.kropki  || []).filter(d => d.a !== i && d.b !== i);
+      pz.compare = (pz.compare || []).filter(d => d.a !== i && d.b !== i);
+      pz.xv      = (pz.xv      || []).filter(d => d.a !== i && d.b !== i);
+      pz.arrows  = (pz.arrows  || []).filter(a => !a.base.includes(i) && !a.path.includes(i));
+      pz.hitpoints=(pz.hitpoints||[]).filter(h => h.cell !== i);
+      pz.extraRegions=(pz.extraRegions||[]).map(er => ({ cells: er.cells.filter(x => x !== i) })).filter(er => er.cells.length);
+    }
+    rebuild();
   }
 
   /* Shared: a chip button with a swatch element for pair/parity pickers. */
@@ -1407,8 +1535,11 @@ window.SudokuApp = (function () {
   }
 
   function buildGridFrame(host) {
-    const { N } = state.puzzle;
-    const size = cellSize(N);
+    const pz = state.puzzle;
+    const N = pz.N;
+    const nRows = pz.rows != null ? pz.rows : N;
+    const nCols = pz.cols != null ? pz.cols : N;
+    const size = cellSize(Math.max(nRows, nCols));
     const skyMode = state.tool === 'sky' ? 'sky'
                   : state.tool === 'sandwich' ? 'sandwich'
                   : state.tool === 'xsum' ? 'xsum'
@@ -1425,39 +1556,35 @@ window.SudokuApp = (function () {
     };
     const frame = el('div', 'sudoku-frame');
     frame.style.setProperty('--cell-size', size + 'px');
-    frame.style.gridTemplateColumns = `${edge}px repeat(${N}, ${size}px) ${edge}px`;
-    frame.style.gridTemplateRows    = `${edge}px repeat(${N}, ${size}px) ${edge}px`;
+    frame.style.gridTemplateColumns = `${edge}px repeat(${nCols}, ${size}px) ${edge}px`;
+    frame.style.gridTemplateRows    = `${edge}px repeat(${nRows}, ${size}px) ${edge}px`;
     state.dom.frame = frame;
     state.dom.cellSize = size;
     state.dom.hasEdge = !!edgeMode;
 
     if (edgeMode) {
-      /* Top edge: corner + N top clues + corner */
+      /* Top edge: corner + nCols top clues + corner */
       frame.appendChild(el('div'));
-      for (let c = 0; c < N; c++) frame.appendChild(makeEdge('top', c));
+      for (let c = 0; c < nCols; c++) frame.appendChild(makeEdge('top', c));
       frame.appendChild(el('div'));
     }
 
-    /* Middle rows: left clue + N grid cells + right clue.
-       We put the grid inside a single cell that spans all N interior columns/rows
-       to keep a rendering-friendly single relatively-positioned container. */
     const grid = el('div', 'sudoku-grid');
     grid.style.setProperty('--cell-size', size + 'px');
-    grid.style.gridTemplateColumns = `repeat(${N}, ${size}px)`;
-    grid.style.gridTemplateRows    = `repeat(${N}, ${size}px)`;
-    grid.style.gridColumn = `2 / span ${N}`;
-    grid.style.gridRow    = `2 / span ${N}`;
+    grid.style.gridTemplateColumns = `repeat(${nCols}, ${size}px)`;
+    grid.style.gridTemplateRows    = `repeat(${nRows}, ${size}px)`;
+    grid.style.gridColumn = `2 / span ${nCols}`;
+    grid.style.gridRow    = `2 / span ${nRows}`;
 
     if (edgeMode) {
-      /* Left and right edge columns, positioned around the grid. */
-      for (let r = 0; r < N; r++) {
+      for (let r = 0; r < nRows; r++) {
         const left = makeEdge('left', r);
         left.style.gridColumn = '1';
         left.style.gridRow = (r + 2);
         frame.appendChild(left);
 
         const right = makeEdge('right', r);
-        right.style.gridColumn = (N + 2);
+        right.style.gridColumn = (nCols + 2);
         right.style.gridRow = (r + 2);
         frame.appendChild(right);
       }
@@ -1467,20 +1594,19 @@ window.SudokuApp = (function () {
     state.dom.grid = grid;
 
     if (edgeMode) {
-      /* Bottom edge */
       const brow = el('div');
       brow.style.gridColumn = '1';
-      brow.style.gridRow = (N + 2);
+      brow.style.gridRow = (nRows + 2);
       frame.appendChild(brow);
-      for (let c = 0; c < N; c++) {
+      for (let c = 0; c < nCols; c++) {
         const b = makeEdge('bottom', c);
         b.style.gridColumn = (c + 2);
-        b.style.gridRow = (N + 2);
+        b.style.gridRow = (nRows + 2);
         frame.appendChild(b);
       }
       const brow2 = el('div');
-      brow2.style.gridColumn = (N + 2);
-      brow2.style.gridRow = (N + 2);
+      brow2.style.gridColumn = (nCols + 2);
+      brow2.style.gridRow = (nRows + 2);
       frame.appendChild(brow2);
     }
 
@@ -1610,45 +1736,63 @@ window.SudokuApp = (function () {
   }
 
   function buildCells(grid) {
-    const { N, boxR, boxC, values, given, regions, cages, thermos, rainbow } = state.puzzle;
-    const size = state.dom.cellSize;
+    const pz = state.puzzle;
+    const { N, boxR, boxC, values, given, regions, rainbow } = pz;
+    const nRows = pz.rows != null ? pz.rows : N;
+    const nCols = pz.cols != null ? pz.cols : N;
+    const total = nRows * nCols;
+    const deleted = pz.deleted;
     const theme = AppTheme.get();
     state.dom.cells = [];
 
-    /* Determine which cells share a region with each neighbor for thicker borders. */
-    grid.classList.toggle('jigsaw', hasCustomRegions());
-    /* `region-mode` reveals the per-cell region tint. Every cell gets a
-       --region-bg (custom or default) so when the tint is shown the whole
-       partition is visible — otherwise a half-painted region would render
-       as two colors (touched cells tinted, untouched cells plain). */
+    /* Any hole forces the jigsaw border path — the box-boundary shortcut
+       assumes a uniform rectangular tiling. */
+    const hasCustom = hasCustomRegions() || (deleted && Array.prototype.some.call(deleted, v => v));
+    grid.classList.toggle('jigsaw', hasCustom);
     grid.classList.toggle('region-mode', state.tool === 'region');
+    grid.classList.toggle('grid-shape-mode', state.tool === 'grid');
 
-    for (let i = 0; i < N * N; i++) {
-      const r = (i / N) | 0, c = i % N;
+    for (let i = 0; i < total; i++) {
+      const r = (i / nCols) | 0, c = i % nCols;
+      if (deleted && deleted[i]) {
+        /* Deleted cell: a non-interactive spacer so the grid layout stays
+           square. Keep the entry in state.dom.cells as null so index maths
+           still lines up. */
+        const gap = el('div', 'sudoku-cell deleted');
+        gap.dataset.idx = i;
+        /* Even a deleted cell needs a click handler when the user is in
+           the Grid tool, so they can un-delete it. */
+        gap.addEventListener('mousedown', (e) => {
+          if (state.tool === 'grid') { e.preventDefault(); toggleDeletedCell(i); }
+        });
+        grid.appendChild(gap);
+        state.dom.cells.push(null);
+        continue;
+      }
       const input = el('input', 'sudoku-cell');
       input.type = 'text';
       input.autocomplete = 'off';
       input.maxLength = 1;
-      input.style.setProperty('--region-bg', regionColor(regions[i], theme));
-      /* Thick borders sit centred on every internal box / region boundary
-         by contributing an equal share from BOTH cells that meet across
-         that edge. That way the visual line falls exactly on the shared
-         edge (no half-pixel drift) and cage outlines that reference the
-         cell edge stay aligned with the region borders. */
-      if (hasCustomRegions()) {
-        if (r > 0     && regions[i - N] !== regions[i]) input.classList.add('bx-t');
-        if (c > 0     && regions[i - 1] !== regions[i]) input.classList.add('bx-l');
-        if (r < N - 1 && regions[i + N] !== regions[i]) input.classList.add('bx-b');
-        if (c < N - 1 && regions[i + 1] !== regions[i]) input.classList.add('bx-r');
+      input.style.setProperty('--region-bg', regions[i] >= 0 ? regionColor(regions[i], theme) : 'transparent');
+      /* Thick borders on region boundaries (or grid edges). Neighbours are
+         "outside" if they don't exist or are deleted. */
+      const isOutside = (rr, cc) => {
+        if (rr < 0 || rr >= nRows || cc < 0 || cc >= nCols) return true;
+        if (deleted && deleted[rr * nCols + cc]) return true;
+        return false;
+      };
+      const neighRegion = (rr, cc) => (isOutside(rr, cc) ? -2 : regions[rr * nCols + cc]);
+      if (hasCustom) {
+        if (neighRegion(r-1, c) !== regions[i]) input.classList.add('bx-t');
+        if (neighRegion(r, c-1) !== regions[i]) input.classList.add('bx-l');
+        if (neighRegion(r+1, c) !== regions[i]) input.classList.add('bx-b');
+        if (neighRegion(r, c+1) !== regions[i]) input.classList.add('bx-r');
       } else {
-        if ((c + 1) % boxC === 0 && c !== N - 1) input.classList.add('bx-r');
-        if (c > 0 && c % boxC === 0)             input.classList.add('bx-l');
-        if ((r + 1) % boxR === 0 && r !== N - 1) input.classList.add('bx-b');
-        if (r > 0 && r % boxR === 0)             input.classList.add('bx-t');
+        if ((c + 1) % boxC === 0 && c !== nCols - 1) input.classList.add('bx-r');
+        if (c > 0 && c % boxC === 0)                 input.classList.add('bx-l');
+        if ((r + 1) % boxR === 0 && r !== nRows - 1) input.classList.add('bx-b');
+        if (r > 0 && r % boxR === 0)                 input.classList.add('bx-t');
       }
-      /* Spectradoku tint stays visible in every tool: the coloring is part
-         of the puzzle constraint (all N colors per row/col/box, each digit
-         appears once per color), not just a drawing aid. */
       if (rainbow && rainbow[i]) {
         input.style.setProperty('--rainbow-bg', spectraColor(rainbow[i] - 1));
         input.classList.add('rainbow-tinted');
@@ -1756,17 +1900,20 @@ window.SudokuApp = (function () {
        draft. Cells appear as one contiguous region with a gray fill and a
        blue border drawn only along the perimeter (edges where a neighbouring
        cell is not part of the selection). */
-    state.dom.cells.forEach(c => c.classList.remove(
-      'sel', 'sel-t', 'sel-b', 'sel-l', 'sel-r', 'kropki-first'));
+    state.dom.cells.forEach(c => {
+      if (!c) return;
+      c.classList.remove('sel', 'sel-t', 'sel-b', 'sel-l', 'sel-r', 'kropki-first');
+    });
     let selCells = [];
     if (state.tool === 'thermo') selCells = state.thermoDraft.cells;
     else if (LINE_TOOLS.has(state.tool)) selCells = state.lineDraft.cells;
     else if (state.tool === 'cage') selCells = state.cageDraft.cells;
     else if (state.tool === 'arrow') selCells = state.arrowDraft.base.concat(state.arrowDraft.path);
     applySelEdges(selCells);
-    if (state.tool === 'kropki'  && state.kropkiFirst  >= 0) state.dom.cells[state.kropkiFirst ].classList.add('kropki-first');
-    if (state.tool === 'compare' && state.compareFirst >= 0) state.dom.cells[state.compareFirst].classList.add('kropki-first');
-    if (state.tool === 'xv'      && state.xvFirst      >= 0) state.dom.cells[state.xvFirst     ].classList.add('kropki-first');
+    const markFirst = (idx) => { const c = state.dom.cells[idx]; if (c) c.classList.add('kropki-first'); };
+    if (state.tool === 'kropki'  && state.kropkiFirst  >= 0) markFirst(state.kropkiFirst);
+    if (state.tool === 'compare' && state.compareFirst >= 0) markFirst(state.compareFirst);
+    if (state.tool === 'xv'      && state.xvFirst      >= 0) markFirst(state.xvFirst);
   }
 
   /* Given a set of selected cell indices, mark each cell with `.sel` plus
@@ -2481,6 +2628,7 @@ window.SudokuApp = (function () {
     grid.querySelectorAll('.er-svg').forEach(n => n.remove());
     /* Reset per-cell tint. */
     state.dom.cells.forEach(c => {
+      if (!c) return;
       c.style.removeProperty('--extra-region-bg');
       c.classList.remove('extra-region-tinted');
     });
@@ -2671,7 +2819,7 @@ window.SudokuApp = (function () {
     const grid = state.dom.grid;
     grid.querySelectorAll('.pm-svg').forEach(n => n.remove());
     /* Clear any pm-confirmed classes from cells regardless of state. */
-    state.dom.cells.forEach(c => c.classList.remove('pm-confirmed'));
+    state.dom.cells.forEach(c => { if (c) c.classList.remove('pm-confirmed'); });
     if (!state.pencilmarkOn || !state.pencilmarkStats) return;
 
     const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
@@ -2756,6 +2904,7 @@ window.SudokuApp = (function () {
       else if (state.tool === 'rowIndex') { e.preventDefault(); state.rowIndexDrag = true; paintIndexLight(i, 'rowIndex'); }
       else if (state.tool === 'hitpoint') { e.preventDefault(); handleHitpointClick(i); }
       else if (state.tool === 'countCircle') { e.preventDefault(); state.ccDrag = null; paintCountCircleLight(i); }
+      else if (state.tool === 'grid') { e.preventDefault(); toggleDeletedCell(i); }
     });
     input.addEventListener('mouseenter', () => {
       if (state.tool === 'cage' && state.cageDrag) applyCageDrag(i);
@@ -2774,10 +2923,14 @@ window.SudokuApp = (function () {
     input.addEventListener('keydown', e => {
       const N = state.puzzle.N;
       const idx = i;
-      if (e.key === 'ArrowRight' && idx % N < N - 1) { e.preventDefault(); state.dom.cells[idx + 1].focus(); return; }
-      if (e.key === 'ArrowLeft'  && idx % N > 0)     { e.preventDefault(); state.dom.cells[idx - 1].focus(); return; }
-      if (e.key === 'ArrowDown'  && idx < N * (N - 1)) { e.preventDefault(); state.dom.cells[idx + N].focus(); return; }
-      if (e.key === 'ArrowUp'    && idx >= N)         { e.preventDefault(); state.dom.cells[idx - N].focus(); return; }
+      const pz = state.puzzle;
+      const nRows = pz.rows != null ? pz.rows : N;
+      const nCols = pz.cols != null ? pz.cols : N;
+      const focusIf = (target) => { const c = state.dom.cells[target]; if (c) c.focus(); };
+      if (e.key === 'ArrowRight' && idx % nCols < nCols - 1) { e.preventDefault(); focusIf(idx + 1); return; }
+      if (e.key === 'ArrowLeft'  && idx % nCols > 0)         { e.preventDefault(); focusIf(idx - 1); return; }
+      if (e.key === 'ArrowDown'  && idx < nCols * (nRows - 1)) { e.preventDefault(); focusIf(idx + nCols); return; }
+      if (e.key === 'ArrowUp'    && idx >= nCols)              { e.preventDefault(); focusIf(idx - nCols); return; }
       if (state.tool !== 'digit') { e.preventDefault(); return; }
       if (e.key === 'Backspace' || e.key === 'Delete') {
         e.preventDefault();
@@ -2964,7 +3117,7 @@ window.SudokuApp = (function () {
     drawThermos();
     drawLines();
     drawArrows();
-    state.dom.cells.forEach(c => c.classList.remove('sel', 'sel-t', 'sel-b', 'sel-l', 'sel-r'));
+    state.dom.cells.forEach(c => { if (c) c.classList.remove('sel', 'sel-t', 'sel-b', 'sel-l', 'sel-r'); });
     if (state.tool === 'thermo') applySelEdges(state.thermoDraft.cells);
     else if (LINE_TOOLS.has(state.tool)) applySelEdges(state.lineDraft.cells);
     else if (state.tool === 'arrow') applySelEdges(state.arrowDraft.base.concat(state.arrowDraft.path));
@@ -3170,11 +3323,11 @@ window.SudokuApp = (function () {
     saveToHash();
 
     /* Clear placeholders + errors. */
-    state.dom.cells.forEach(c => { c.classList.remove('error'); c.placeholder = ''; c.classList.remove('hint-only'); });
+    state.dom.cells.forEach(c => { if (!c) return; c.classList.remove('error'); c.placeholder = ''; c.classList.remove('hint-only'); });
 
     const conflicts = Core.findConflicts(state.puzzle);
     if (conflicts.size > 0) {
-      conflicts.forEach(i => state.dom.cells[i].classList.add('error'));
+      conflicts.forEach(i => { const c = state.dom.cells[i]; if (c) c.classList.add('error'); });
       setStatus(L({ en: `Conflict: ${conflicts.size} cells clash.`,
                     zh: `冲突：${conflicts.size} 个单元格重复。` }), 'err');
       updateNav();
@@ -3319,6 +3472,7 @@ window.SudokuApp = (function () {
        class as a solver hint, and those need to be reset before applying
        (or omitting) the new solution's colors. */
     state.dom.cells.forEach((c, i) => {
+      if (!c) return;
       c.placeholder = '';
       c.classList.remove('hint-only');
       if (rainbow && !rainbow[i]) {
@@ -3339,6 +3493,7 @@ window.SudokuApp = (function () {
        so the two layers don't overlap. */
     const pm = state.pencilmarkOn;
     state.dom.cells.forEach((c, i) => {
+      if (!c) return;
       if (!values[i] && !pm) { c.placeholder = digitToChar(solValues[i]); c.classList.add('hint-only'); }
       /* Spectradoku: paint the derived color on cells the user didn't paint,
          so every cell in the shown solution carries both digit and color. */

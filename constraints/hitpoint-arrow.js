@@ -26,19 +26,22 @@
     [1, 0], [1, -1], [0, -1], [-1, -1],
   ];
 
-  self.HitpointHelpers = { DIRS };
+  self.HitpointHelpers = { DIRS, pathCells };
 
-  function pathCells(cell, dirs, N) {
+  function pathCells(cell, dirs, rows, cols, deleted) {
     /* Returns [{ idx, dist }, ...] for every downstream cell across every
-       set direction of the arrow at `cell`. Distances start at 1. */
-    const r0 = (cell / N) | 0, c0 = cell % N;
+       set direction of the arrow at `cell`. Deleted cells terminate the
+       ray (as if they were the grid edge). Distances start at 1. */
+    const r0 = (cell / cols) | 0, c0 = cell % cols;
     const out = [];
     for (let d = 0; d < 8; d++) {
       if (!(dirs & (1 << d))) continue;
       const [dr, dc] = DIRS[d];
       let r = r0 + dr, c = c0 + dc, k = 1;
-      while (r >= 0 && r < N && c >= 0 && c < N) {
-        out.push({ idx: r * N + c, dist: k });
+      while (r >= 0 && r < rows && c >= 0 && c < cols) {
+        const idx = r * cols + c;
+        if (deleted && deleted[idx]) break;
+        out.push({ idx, dist: k });
         r += dr; c += dc; k++;
       }
     }
@@ -58,9 +61,11 @@
 
     findConflicts(p, ctx) {
       const N = p.N, values = p.values;
+      const nRows = p.rows != null ? p.rows : N;
+      const nCols = p.cols != null ? p.cols : N;
       for (const hp of (p.hitpoints || [])) {
         if (!hp.dirs) continue;
-        const path = pathCells(hp.cell, hp.dirs, N);
+        const path = pathCells(hp.cell, hp.dirs, nRows, nCols, p.deleted);
         const entryV = values[hp.cell];
         if (!entryV) continue;
         if (!path.every(step => values[step.idx])) continue;
@@ -80,9 +85,10 @@
     solverInit(p, ctx) {
       const list = p.hitpoints || [];
       if (!list.length) return null;
-      const N = ctx.N;
-      const total = N * N;
-      const paths = list.map(hp => pathCells(hp.cell, hp.dirs, N));
+      const nRows = ctx.rows != null ? ctx.rows : ctx.N;
+      const nCols = ctx.cols != null ? ctx.cols : ctx.N;
+      const total = ctx.total != null ? ctx.total : nRows * nCols;
+      const paths = list.map(hp => pathCells(hp.cell, hp.dirs, nRows, nCols, ctx.deleted));
       /* Per-cell reverse map: for each cell, which (entry, distance) tuples
          include it in their path. */
       const pathRefsOf = Array.from({ length: total }, () => []);

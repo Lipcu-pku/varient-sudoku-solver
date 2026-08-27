@@ -14,17 +14,29 @@
  *     sum:  target sum for cells along the diagonal
  */
 (function () {
-  function diagCells(side, idx, dir, N) {
+  function diagCells(side, idx, dirOrRows, rowsOrCols, colsOrDeleted, deletedMaybe) {
+    /* Legacy: diagCells(side, idx, dir, N)
+       New:    diagCells(side, idx, dir, rows, cols, deleted?) */
+    let dir, rows, cols, deleted;
+    if (rowsOrCols === undefined) {
+      /* 4-arg legacy square form: (side, idx, dir, N) */
+      dir = dirOrRows; rows = cols = arguments[3]; deleted = null;
+    } else if (colsOrDeleted === undefined) {
+      dir = dirOrRows; rows = cols = rowsOrCols; deleted = null;
+    } else {
+      dir = dirOrRows; rows = rowsOrCols; cols = colsOrDeleted; deleted = deletedMaybe || null;
+    }
     const cells = [];
     let r, c;
-    if (side === 'top')         { r = 0;     c = idx; }
-    else if (side === 'bottom') { r = N - 1; c = idx; }
-    else if (side === 'left')   { r = idx;   c = 0; }
-    else                        { r = idx;   c = N - 1; }
+    if (side === 'top')         { r = 0;        c = idx; }
+    else if (side === 'bottom') { r = rows - 1; c = idx; }
+    else if (side === 'left')   { r = idx;      c = 0; }
+    else                        { r = idx;      c = cols - 1; }
     const dr = (dir === 'dr' || dir === 'dl') ? 1 : -1;
     const dc = (dir === 'dr' || dir === 'ur') ? 1 : -1;
-    while (r >= 0 && r < N && c >= 0 && c < N) {
-      cells.push(r * N + c);
+    while (r >= 0 && r < rows && c >= 0 && c < cols) {
+      const i = r * cols + c;
+      if (!deleted || !deleted[i]) cells.push(i);
       r += dr; c += dc;
     }
     return cells;
@@ -45,8 +57,10 @@
 
     findConflicts(p, ctx) {
       const N = p.N, values = p.values;
+      const nRows = p.rows != null ? p.rows : N;
+      const nCols = p.cols != null ? p.cols : N;
       for (const lk of (p.littleKillers || [])) {
-        const cells = diagCells(lk.side, lk.idx, lk.dir, N);
+        const cells = diagCells(lk.side, lk.idx, lk.dir, nRows, nCols, p.deleted);
         if (!cells.length) continue;
         if (!cells.every(i => values[i])) continue;
         let s = 0;
@@ -58,9 +72,10 @@
     solverInit(p, ctx) {
       const list = p.littleKillers || [];
       if (!list.length) return null;
-      const N = ctx.N;
-      const total = N * N;
-      const cellsOf = list.map(lk => diagCells(lk.side, lk.idx, lk.dir, N));
+      const nRows = ctx.rows != null ? ctx.rows : ctx.N;
+      const nCols = ctx.cols != null ? ctx.cols : ctx.N;
+      const total = ctx.total != null ? ctx.total : nRows * nCols;
+      const cellsOf = list.map(lk => diagCells(lk.side, lk.idx, lk.dir, nRows, nCols, ctx.deleted));
       const diagOf = Array.from({ length: total }, () => []);
       cellsOf.forEach((cells, di) => cells.forEach(cell => diagOf[cell].push(di)));
       return {

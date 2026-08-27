@@ -260,6 +260,25 @@ section {
 .sudoku-cell.bx-l { border-left:   1.5px solid var(--muted); }
 .sudoku-cell.bx-t { border-top:    1.5px solid var(--muted); }
 
+/* Deleted cells: gap in the grid. Transparent, no borders, no cursor. */
+.sudoku-cell.deleted {
+  background: transparent;
+  border: none !important;
+  cursor: default;
+}
+/* In the Grid shape editor, deleted cells become clickable "undelete"
+   slots and non-deleted cells hover into a "click to delete" affordance. */
+.sudoku-grid.grid-shape-mode .sudoku-cell {
+  cursor: crosshair;
+}
+.sudoku-grid.grid-shape-mode .sudoku-cell.deleted {
+  background: repeating-linear-gradient(
+    45deg,
+    color-mix(in oklab, var(--muted) 15%, transparent) 0 4px,
+    transparent 4px 8px);
+  cursor: crosshair;
+}
+
 /* Region tinting. Shown only while the Regions tool is active so the tint
    doesn't fight other overlays for attention — but every cell (including
    plain rectangular boxes) gets a colored fill so a half-painted region
