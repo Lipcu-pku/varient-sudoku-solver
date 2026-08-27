@@ -8,6 +8,10 @@
  * worker and spawns a new one — that's the only way to preempt a running
  * JS turn since Workers are single-threaded internally.
  */
+/* Keep this list in sync with index.html — every constraint plugin the UI
+   knows about must load here too, otherwise the solver runs on this thread
+   without the constraint and returns "solutions" that violate it (silent
+   correctness bug). */
 importScripts(
   'constraints/registry.js',
   'constraints/renban.js',
@@ -19,6 +23,14 @@ importScripts(
   'constraints/little-killer.js',
   'constraints/index-cells.js',
   'constraints/hitpoint-arrow.js',
+  'constraints/extra-region.js',
+  'constraints/disjoint.js',
+  'constraints/slow-thermo.js',
+  'constraints/between.js',
+  'constraints/lockout.js',
+  'constraints/sequence.js',
+  'constraints/xsums.js',
+  'constraints/count-circle.js',
   'sudoku-core.js'
 );
 

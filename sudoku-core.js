@@ -999,24 +999,70 @@ self.SudokuCore = (function () {
     return { solutions, reachedCap };
   }
 
-  /* ---------- Serialize / deserialize (for load/share buttons) ---------- */
+  /* ---------- Serialize / deserialize (for load/share buttons) ----------
+   * The output is designed to compress well: zero-filled arrays, empty
+   * lists, unchanged region layouts, and all-false flag objects are dropped
+   * entirely rather than dumping thousands of zeros into the JSON. The
+   * deserializer treats every field as optional and reconstructs defaults
+   * for anything missing. */
+  function anyNonzero(arr) { for (let i = 0; i < arr.length; i++) if (arr[i]) return true; return false; }
+  function equalRegions(a, b) {
+    if (a.length !== b.length) return false;
+    for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+    return true;
+  }
+  function compactSides(sides) {
+    /* sky/sandwich/xsum each hold four N-long arrays. Emit only the sides
+       that have any nonzero clue; return null if none of them do. */
+    const out = {};
+    for (const side of ['top', 'bottom', 'left', 'right']) {
+      if (sides[side] && anyNonzero(sides[side])) out[side] = [...sides[side]];
+    }
+    return Object.keys(out).length ? out : null;
+  }
+  function compactFlags(flags) {
+    const out = {};
+    for (const k of Object.keys(flags || {})) if (flags[k]) out[k] = true;
+    return Object.keys(out).length ? out : null;
+  }
   function serialize(p) {
-    const out = {
-      N: p.N, boxR: p.boxR, boxC: p.boxC,
-      values: [...p.values], given: [...p.given], regions: [...p.regions],
-      cages: p.cages, thermos: p.thermos,
-      whispers: p.whispers, regionSums: p.regionSums, modulars: p.modulars,
-      kropki: p.kropki, compare: p.compare, xv: p.xv,
-      parity: [...(p.parity || [])],
-      sky: { top:[...p.sky.top], bottom:[...p.sky.bottom],
-             left:[...p.sky.left], right:[...p.sky.right] },
-      sandwich: { top:[...p.sandwich.top], bottom:[...p.sandwich.bottom],
-                  left:[...p.sandwich.left], right:[...p.sandwich.right] },
-      rainbow: [...(p.rainbow || [])],
-      flags: p.flags,
-    };
+    const out = { N: p.N, boxR: p.boxR, boxC: p.boxC };
+    if (anyNonzero(p.values)) out.values = [...p.values];
+    if (anyNonzero(p.given))  out.given  = [...p.given];
+    const defRegions = rectRegions(p.N, p.boxR, p.boxC);
+    if (!equalRegions(p.regions, defRegions)) out.regions = [...p.regions];
+    if (p.cages && p.cages.length)       out.cages   = p.cages;
+    if (p.thermos && p.thermos.length)   out.thermos = p.thermos;
+    if (p.whispers   && p.whispers.length)   out.whispers   = p.whispers;
+    if (p.regionSums && p.regionSums.length) out.regionSums = p.regionSums;
+    if (p.modulars   && p.modulars.length)   out.modulars   = p.modulars;
+    if (p.kropki   && p.kropki.length)   out.kropki  = p.kropki;
+    if (p.compare  && p.compare.length)  out.compare = p.compare;
+    if (p.xv       && p.xv.length)       out.xv      = p.xv;
+    if (p.parity   && anyNonzero(p.parity))   out.parity  = [...p.parity];
+    if (p.rainbow  && anyNonzero(p.rainbow))  out.rainbow = [...p.rainbow];
+    const sky      = compactSides(p.sky);      if (sky)      out.sky      = sky;
+    const sandwich = compactSides(p.sandwich); if (sandwich) out.sandwich = sandwich;
+    const flags = compactFlags(p.flags); if (flags) out.flags = flags;
+    /* Plugin fields: strip empty arrays / all-zero cell-masks after the
+       plugin emits its chunk so each plugin's serialize() stays simple. */
     for (const plugin of pluginList()) {
-      if (plugin.serialize) Object.assign(out, plugin.serialize(p));
+      if (!plugin.serialize) continue;
+      const chunk = plugin.serialize(p);
+      for (const k of Object.keys(chunk)) {
+        const v = chunk[k];
+        if (v == null) continue;
+        if (Array.isArray(v)) {
+          if (v.length === 0) continue;
+          if (v.every(x => x === 0)) continue;
+          out[k] = v;
+        } else if (typeof v === 'object') {
+          const sub = compactSides(v);
+          if (sub) out[k] = sub;
+        } else if (v) {
+          out[k] = v;
+        }
+      }
     }
     return JSON.stringify(out);
   }

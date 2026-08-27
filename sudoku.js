@@ -3094,20 +3094,31 @@ window.SudokuApp = (function () {
     drawIndexCells();
   }
 
-  /* ---------- URL-hash persistence (compact, human-readable-ish) ---------- */
+  /* ---------- URL-hash persistence ----------
+   * New links use LZ-string's URL-safe base64 (compressToEncodedURIComponent).
+   * That plus the compact JSON produced by Core.serialize shrinks a typical
+   * 9×9 puzzle share URL from ~3 KB to ~200 chars. Legacy hashes written
+   * with plain base64 still load — the loader tries LZ first and falls back
+   * to base64 if the decompressed payload doesn't parse as JSON. */
   function saveToHash() {
     try {
       const json = Core.serialize(state.puzzle);
-      const b64 = btoa(unescape(encodeURIComponent(json)))
-        .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-      history.replaceState(null, '', '#p=' + b64);
-    } catch (e) { /* localStorage / history may fail in file://, non-fatal. */ }
+      const enc = LZString.compressToEncodedURIComponent(json);
+      history.replaceState(null, '', '#p=' + enc);
+    } catch (e) { /* history may fail in file://, non-fatal. */ }
   }
   function loadFromHash() {
     try {
-      const m = /#p=([A-Za-z0-9_-]+)/.exec(location.hash);
+      const m = /#p=([^&]+)/.exec(location.hash);
       if (!m) return null;
-      const b64 = m[1].replace(/-/g, '+').replace(/_/g, '/');
+      const payload = m[1];
+      /* Try LZ-string first (current scheme). */
+      try {
+        const json = LZString.decompressFromEncodedURIComponent(payload);
+        if (json && json.startsWith('{')) return Core.deserialize(json);
+      } catch (_) { /* fall through to legacy path */ }
+      /* Legacy path: URL-safe base64 of UTF-8 JSON. */
+      const b64 = payload.replace(/-/g, '+').replace(/_/g, '/');
       const json = decodeURIComponent(escape(atob(b64)));
       return Core.deserialize(json);
     } catch (e) { return null; }
