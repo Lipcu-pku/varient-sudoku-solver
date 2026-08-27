@@ -22,8 +22,14 @@ self.SudokuConstraints.register({
   },
 
   findConflicts(p, ctx) {
-    const values = p.values;
+    const N = p.N, values = p.values;
     for (const er of (p.extraRegions || [])) {
+      /* A no-repeat region can hold at most N distinct digits — anything
+         larger is unsatisfiable, so flag every cell in it. */
+      if (er.cells.length > N) {
+        for (const i of er.cells) ctx.conflicts.add(i);
+        continue;
+      }
       const seen = new Map();
       for (const i of er.cells) {
         const v = values[i]; if (!v) continue;
@@ -36,11 +42,17 @@ self.SudokuConstraints.register({
   solverInit(p, ctx) {
     const list = p.extraRegions || [];
     if (!list.length) return null;
-    const lookup = Array.from({ length: ctx.N * ctx.N }, () => []);
+    const N = ctx.N;
+    const lookup = Array.from({ length: N * N }, () => []);
+    const mask = new Int32Array(list.length);
     list.forEach((er, ri) => {
+      /* An oversized region is impossible — pre-fill its mask with every
+         digit so solverCheck rejects every placement in it and the search
+         returns zero solutions. */
+      if (er.cells.length > N) mask[ri] = ctx.full;
       for (const i of er.cells) lookup[i].push(ri);
     });
-    return { list, lookup, mask: new Int32Array(list.length) };
+    return { list, lookup, mask };
   },
 
   solverCheck(p, ctx, h, i, v) {

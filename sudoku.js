@@ -106,7 +106,6 @@ window.SudokuApp = (function () {
       sequence:  { en: 'Sequence',     zh: '等差线' },
       xsum:      { en: 'X-Sums',       zh: 'X 和' },
       countCircle:{ en: 'Count Circle', zh: '计数圆' },
-      play:      { en: '▶ Play',       zh: '▶ 游玩' },
     },
     flag: {
       diagonal:        { en: 'X (diagonals)',     zh: 'X（对角）' },
@@ -199,10 +198,6 @@ window.SudokuApp = (function () {
       countCircle: {
         en: 'Click or drag cells to add or remove circles. If digit v appears on any circled cell, exactly v circled cells contain v.',
         zh: '点击或拖动格子添加或移除圆圈。若数字 v 出现在任一圆圈内，则恰好有 v 个圆圈内含 v。',
-      },
-      play: {
-        en: 'Play mode: enter digits, Shift+digit for center pencilmarks, Ctrl+digit for corner pencilmarks. Pick a color chip to paint cell backgrounds. All puzzle constraints are conflict-checked live.',
-        zh: '游玩模式：直接输入数字；Shift+数字为中心候选，Ctrl+数字为角落候选。选择颜色可为格子上色。所有约束均实时冲突检测。',
       },
     },
     solve:   { en: 'Solve',           zh: '求解' },
@@ -331,28 +326,6 @@ window.SudokuApp = (function () {
       erColor: 0,
       /* Count-circle paint state. */
       ccDrag: null,     /* null | 0 | 1 (drag intent: clear vs. mark) */
-      /* Play mode: solver-side state kept separately from setter-side puzzle
-         so switching tabs preserves both. Design:
-           - `activeMode` is the SELECTED mode (persists).
-           - `tempMode` is the mode implied by held modifiers (Ctrl → center,
-             Shift → corner, Ctrl+Shift → color) — reset the moment the
-             modifier is released. Effective mode = tempMode ?? activeMode.
-           - `lastFocused` tracks which cell the on-screen keypad targets.
-           - `lines` and `lineDraft` cover the free-form line-drawing tool
-             whose endpoints snap to corners / centers / edge midpoints. */
-      play: {
-        values:  null,   /* Uint8Array or null (created on first entry) */
-        center:  null,   /* Uint16Array(N*N) — bitmask of center pencilmarks */
-        corner:  null,   /* Uint16Array(N*N) — bitmask of corner pencilmarks */
-        colors:  null,   /* Int8Array(N*N) */
-        colorPick: 1,
-        activeMode: 'value',  /* 'value' | 'center' | 'corner' | 'color' | 'line' */
-        tempMode:   null,     /* set from modifier keys; overrides activeMode when non-null */
-        lastFocused: -1,      /* which cell will receive keypad input */
-        lines:  [],           /* [{ color, points:[{gx, gy}, ...] }] — grid-coord snap points */
-        lineDraft: null,      /* { color, points:[...] } while dragging */
-        lineColor: 1,         /* 1..8 into PLAY_LINE_COLORS */
-      },
       /* Pencilmark analysis */
       pencilmarkOn: false,
       pencilmarkStats: null,   /* { freq: Uint16Array(N*N*(N+1)), maxPerCell: Uint16Array(N*N) } */
@@ -518,7 +491,6 @@ window.SudokuApp = (function () {
     { label: { en: 'Edge marks', zh: '边标记' }, tools: ['kropki', 'compare', 'xv'] },
     { label: { en: 'Point marks',zh: '点标记' }, tools: ['quadruple'] },
     { label: { en: 'Cell marks', zh: '格子标记' }, tools: ['parity', 'colIndex', 'rowIndex', 'countCircle'] },
-    { label: { en: 'Solve',      zh: '游玩'   }, tools: ['play'] },
   ];
 
   function buildToolTabs(host) {
@@ -544,14 +516,8 @@ window.SudokuApp = (function () {
             state.lkDraft = { dir: null, sum: '' };
             state.lkNotice = '';
           }
-          const enteringOrLeavingPlay =
-            (state.tool === 'play') !== (k === 'play');
           state.tool = k;
-          /* Play mode swaps the actions row (keypad ↔ solve controls), which
-             lives in render(). Do a full rebuild in that case instead of the
-             lighter rebuildToolUI(). */
-          if (enteringOrLeavingPlay) rebuild();
-          else rebuildToolUI();
+          rebuildToolUI();
         });
         row.appendChild(b);
         state.dom.tabs[k] = b;
@@ -596,7 +562,6 @@ window.SudokuApp = (function () {
     if (state.tool === 'extraRegion') fillExtraRegionPanel(p);
     if (state.tool === 'xsum')      fillXSumPanel(p);
     if (state.tool === 'countCircle') fillCountCirclePanel(p);
-    if (state.tool === 'play')      fillPlayPanel(p);
   }
 
   /* Shared: a chip button with a swatch element for pair/parity pickers. */
@@ -1428,272 +1393,6 @@ window.SudokuApp = (function () {
     drawCountCircles();
   }
 
-  /* Play-mode click: dispatches to color painting when the "Color" sub-mode
-     is active. Digit / pencilmark editing is keyboard-driven, so all we do
-     for value modes is let the click focus the cell. */
-  function handlePlayCellClick(i, e) {
-    ensurePlayState();
-    state.play.lastFocused = i;
-    const mode = playEffectiveMode();
-    if (mode === 'color') {
-      e.preventDefault();
-      state.playColorDrag = true;
-      state.__playColorMode = null;
-      paintPlayColorLight(i);
-    }
-    /* Value / pm / line modes fall through — the input focus + keydown
-       handler covers those. Line drawing has its own dedicated overlay. */
-  }
-  function paintPlayColorLight(i) {
-    ensurePlayState();
-    const pick = state.play.colorPick;
-    /* First-cell decides intent: painting or clearing. */
-    if (state.__playColorMode == null) {
-      state.__playColorMode = state.play.colors[i] === pick ? 0 : pick;
-    }
-    const target = state.__playColorMode;
-    if (state.play.colors[i] === target) return;
-    state.play.colors[i] = target;
-    drawPlayOverlays();
-  }
-
-  /* The mode that keystrokes / keypad taps should target. When a modifier
-     key is held (tempMode set) it wins; otherwise the user-selected mode. */
-  function playEffectiveMode() {
-    return state.play.tempMode || state.play.activeMode || 'value';
-  }
-
-  /* Cycle through the input modes on Space. Line mode is included so users
-     can flip into drawing without touching the mouse. */
-  const PLAY_MODES = ['value', 'center', 'corner', 'color', 'line'];
-  function cyclePlayMode() {
-    const cur = state.play.activeMode || 'value';
-    const at = PLAY_MODES.indexOf(cur);
-    state.play.activeMode = PLAY_MODES[(at + 1) % PLAY_MODES.length];
-    refreshPlayModeUI();
-  }
-
-  /* Central digit-application routine used by both keyboard and on-screen
-     keypad. Skips the full analyze() pipeline for pencilmark / color edits —
-     those don't change conflicts, and running the solver worker for every
-     keystroke is what caused the observed lag. */
-  function applyPlayDigit(idx, v, shift, ctrl) {
-    ensurePlayState();
-    if (state.puzzle.given[idx]) return;
-    const N = state.puzzle.N;
-    if (v < 1 || v > N) return;
-    const mb = 1 << (v - 1);
-    /* Modifier keys temporarily override the selected mode. Priority mirrors
-       the tempMode computation in the document-level listener:
-         Ctrl+Shift → color, Ctrl → center, Shift → corner, none → value. */
-    let mode;
-    if (ctrl && shift)      mode = 'color';
-    else if (ctrl)          mode = 'center';
-    else if (shift)         mode = 'corner';
-    else                    mode = state.play.activeMode || 'value';
-    if (mode === 'center') {
-      state.play.center[idx] ^= mb;
-      drawPlayOverlays();
-      return;
-    }
-    if (mode === 'corner') {
-      state.play.corner[idx] ^= mb;
-      drawPlayOverlays();
-      return;
-    }
-    if (mode === 'color') {
-      const pal = PLAY_COLORS.length;
-      const co = ((v - 1) % pal) + 1;
-      state.play.colors[idx] = state.play.colors[idx] === co ? 0 : co;
-      drawPlayOverlays();
-      return;
-    }
-    if (mode === 'line') {
-      const pal = PLAY_LINE_COLORS.length;
-      state.play.lineColor = ((v - 1) % pal) + 1;
-      refreshPlayModeUI();
-      return;
-    }
-    /* Value mode: same digit twice clears, and only value edits invoke the
-       lightweight conflict check. */
-    state.play.values[idx] = state.play.values[idx] === v ? 0 : v;
-    const cell = state.dom.cells[idx];
-    if (cell) cell.value = state.play.values[idx] ? digitToChar(v) : '';
-    playAnalyze();
-  }
-
-  /* Refresh only the mode chip highlight + keypad — cheap, does not rebuild
-     the grid or run any solver. Called on tempMode changes and mode picks. */
-  function refreshPlayModeUI() {
-    if (state.dom.playModeChips) {
-      const effective = playEffectiveMode();
-      state.dom.playModeChips.forEach((chip, k) => {
-        chip.classList.toggle('active', chip.dataset.mode === effective);
-      });
-    }
-    if (state.dom.keypadWrap) buildKeypad(state.dom.keypadWrap);
-    if (state.dom.playColorRow) refreshPlayColorRow();
-  }
-  function refreshPlayColorRow() {
-    const wrap = state.dom.playColorRow;
-    if (!wrap) return;
-    wrap.querySelectorAll('.chip.play-color').forEach(chip => {
-      const k = Number(chip.dataset.k);
-      chip.classList.toggle('active', state.play.colorPick === k);
-    });
-    wrap.querySelectorAll('.chip.play-line-color').forEach(chip => {
-      const k = Number(chip.dataset.k);
-      chip.classList.toggle('active', state.play.lineColor === k);
-    });
-  }
-
-  /* Fast play-mode conflict pass: no solver worker, no hash save. Uses the
-     combined given + play-values grid and highlights any violations. */
-  function playAnalyze() {
-    ensurePlayState();
-    state.dom.cells.forEach(c => { c.classList.remove('error'); c.placeholder = ''; c.classList.remove('hint-only'); });
-    const N = state.puzzle.N;
-    const overlay = new Uint8Array(N * N);
-    for (let i = 0; i < N * N; i++) {
-      overlay[i] = state.puzzle.given[i] ? state.puzzle.values[i] : state.play.values[i] || 0;
-    }
-    const checkPuzzle = Object.assign({}, state.puzzle, { values: overlay });
-    const conflicts = Core.findConflicts(checkPuzzle);
-    conflicts.forEach(i => state.dom.cells[i].classList.add('error'));
-    /* Redraw play-side pencilmarks + colors + lines (values already sync in the
-       input's .value) — a full render() would also work but is far heavier. */
-    drawPlayOverlays();
-    /* Status: solved / progress. */
-    let filled = 0;
-    for (let i = 0; i < N * N; i++) if (overlay[i]) filled++;
-    const total = N * N;
-    if (conflicts.size) {
-      setStatus(L({ en: `Conflict: ${conflicts.size} cells clash.`,
-                    zh: `冲突：${conflicts.size} 个单元格冲突。` }), 'err');
-    } else if (filled === total) {
-      setStatus(L({ en: 'Solved ✓', zh: '完成 ✓' }), 'ok');
-    } else {
-      setStatus(L({ en: `Playing: ${filled}/${total} filled.`,
-                    zh: `游玩中：已填 ${filled}/${total}。` }));
-    }
-  }
-
-  /* ---------- Play mode panel ---------- */
-  /* Play-mode color palette: 8 highlight tints that layer well over grid cells
-     and stay legible in both themes. */
-  const PLAY_COLORS = [
-    '#fca5a5', '#fdba74', '#fde68a', '#bef264',
-    '#67e8f9', '#93c5fd', '#c4b5fd', '#f9a8d4',
-  ];
-  /* Line palette: intentionally deeper / more saturated than the cell
-     highlight palette so drawn lines stay legible over the tints. */
-  const PLAY_LINE_COLORS = [
-    '#dc2626', '#ea580c', '#ca8a04', '#16a34a',
-    '#0891b2', '#2563eb', '#7c3aed', '#db2777',
-  ];
-  function ensurePlayState() {
-    const N = state.puzzle.N;
-    const total = N * N;
-    if (!state.play.values  || state.play.values.length  !== total) state.play.values  = new Uint8Array(total);
-    if (!state.play.center  || state.play.center.length  !== total) state.play.center  = new Uint16Array(total);
-    if (!state.play.corner  || state.play.corner.length  !== total) state.play.corner  = new Uint16Array(total);
-    if (!state.play.colors  || state.play.colors.length  !== total) state.play.colors  = new Int8Array(total);
-  }
-
-  const PLAY_MODE_LABELS = [
-    { key: 'value',  en: 'Digit',       zh: '数字',   hint: '' },
-    { key: 'corner', en: 'Corner PM',   zh: '角候选', hint: 'Shift' },
-    { key: 'center', en: 'Center PM',   zh: '中候选', hint: 'Ctrl' },
-    { key: 'color',  en: 'Color',       zh: '颜色',   hint: 'Ctrl+Shift' },
-    { key: 'line',   en: 'Line',        zh: '连线',   hint: '' },
-  ];
-
-  function fillPlayPanel(p) {
-    ensurePlayState();
-    state.dom.playModeChips = [];
-    p.appendChild(el('span', null, L({ en: 'Mode', zh: '模式' }) + ':'));
-    const effective = playEffectiveMode();
-    PLAY_MODE_LABELS.forEach(m => {
-      const chip = el('button', 'chip' + (effective === m.key ? ' active' : ''));
-      chip.dataset.mode = m.key;
-      const lbl = L({ en: m.en, zh: m.zh }) + (m.hint ? ` (${m.hint})` : '');
-      chip.textContent = lbl;
-      chip.addEventListener('click', () => {
-        state.play.activeMode = m.key;
-        refreshPlayModeUI();
-      });
-      p.appendChild(chip);
-      state.dom.playModeChips.push(chip);
-    });
-    /* Color-mode picker or Line-mode color picker slots into the same row so
-       the tool panel doesn't reflow between modes. */
-    const colorWrap = el('div', 'play-color-row');
-    colorWrap.style.display = 'flex';
-    colorWrap.style.flexWrap = 'wrap';
-    colorWrap.style.gap = '0.25rem';
-    colorWrap.style.alignItems = 'center';
-    state.dom.playColorRow = colorWrap;
-    /* Fill palette. Cell-tint palette shown when in 'color' mode, line palette
-       when in 'line' mode. Others: no picker. */
-    if (effective === 'color') {
-      colorWrap.appendChild(el('span', null, L({ en: 'Fill', zh: '填色' }) + ':'));
-      for (let k = 0; k < PLAY_COLORS.length; k++) {
-        const chip = el('button', 'chip play-color' + (state.play.colorPick === k + 1 ? ' active' : ''));
-        chip.dataset.k = String(k + 1);
-        const sw = el('span', 'swatch');
-        sw.style.background = PLAY_COLORS[k];
-        chip.appendChild(sw);
-        chip.appendChild(document.createTextNode(String(k + 1)));
-        chip.addEventListener('click', () => { state.play.colorPick = k + 1; refreshPlayColorRow(); });
-        colorWrap.appendChild(chip);
-      }
-      colorWrap.appendChild(btn({ en: 'Clear colors', zh: '清空填色' }, {
-        secondary: true,
-        onClick: () => { state.play.colors.fill(0); drawPlayOverlays(); },
-      }));
-    } else if (effective === 'line') {
-      colorWrap.appendChild(el('span', null, L({ en: 'Line color', zh: '线条颜色' }) + ':'));
-      for (let k = 0; k < PLAY_LINE_COLORS.length; k++) {
-        const chip = el('button', 'chip play-line-color' + (state.play.lineColor === k + 1 ? ' active' : ''));
-        chip.dataset.k = String(k + 1);
-        const sw = el('span', 'swatch');
-        sw.style.background = PLAY_LINE_COLORS[k];
-        chip.appendChild(sw);
-        chip.appendChild(document.createTextNode(String(k + 1)));
-        chip.addEventListener('click', () => { state.play.lineColor = k + 1; refreshPlayColorRow(); });
-        colorWrap.appendChild(chip);
-      }
-      colorWrap.appendChild(btn({ en: 'Delete last line', zh: '删除上一条线' }, {
-        secondary: true,
-        onClick: () => { state.play.lines.pop(); drawPlayOverlays(); },
-      }));
-      colorWrap.appendChild(btn({ en: 'Clear lines', zh: '清空所有线' }, {
-        secondary: true,
-        onClick: () => { state.play.lines = []; drawPlayOverlays(); },
-      }));
-    }
-    p.appendChild(colorWrap);
-    p.appendChild(btn({ en: 'Reset play', zh: '重置游玩' }, {
-      secondary: true,
-      onClick: () => {
-        state.play.values.fill(0);
-        state.play.center.fill(0);
-        state.play.corner.fill(0);
-        state.play.colors.fill(0);
-        state.play.lines = [];
-        rebuild();
-      },
-    }));
-    const hint = el('span', 'hint');
-    hint.textContent = L({
-      en: 'Digits go into the selected mode. Hold Shift for corner PM, Ctrl for center PM, Ctrl+Shift for color. Space cycles modes. Backspace clears. Given cells are locked.',
-      zh: '数字进入所选模式。按住 Shift → 角候选，Ctrl → 中候选，Ctrl+Shift → 颜色。空格切换模式。Backspace 清除。已知格锁定。',
-    });
-    hint.style.flex = '1 1 100%';
-    hint.style.textAlign = 'center';
-    p.appendChild(hint);
-  }
-
   /* ---------- Grid + frame (with skyscraper edges) ---------- */
   function cellSize(N) {
     /* Shrink cells so 16×16 still fits comfortably. */
@@ -1950,17 +1649,8 @@ window.SudokuApp = (function () {
         input.style.setProperty('--rainbow-bg', spectraColor(rainbow[i] - 1));
         input.classList.add('rainbow-tinted');
       }
-      /* In Play mode, non-given cells show the player's entered digit (if any)
-         rather than the setter's clue field. Given cells always show the puzzle
-         value with the .given styling so they stay locked-looking. */
       let display = '';
-      if (values[i] && given[i]) display = digitToChar(values[i]);
-      else if (state.tool === 'play' && state.play.values && state.play.values[i]) {
-        display = digitToChar(state.play.values[i]);
-        input.classList.add('play-entry');
-      } else if (values[i]) {
-        display = digitToChar(values[i]);
-      }
+      if (values[i]) display = digitToChar(values[i]);
       input.value = display;
       if (values[i] && given[i]) input.classList.add('given');
       input.dataset.idx = i;
@@ -2013,10 +1703,6 @@ window.SudokuApp = (function () {
     /* Slow-thermo / Between / Lockout / Sequence lines. */
     drawSlowThermos();
     drawBetweenLikeLines();
-
-    /* Play-mode overlays: cell background colors + center/corner
-       pencilmarks — only meaningful in the Play tool. */
-    drawPlayOverlays();
 
     /* Pencilmark analysis overlay (only when pencilmarkOn). */
     drawPencilmarks();
@@ -2972,172 +2658,6 @@ window.SudokuApp = (function () {
     grid.appendChild(svg);
   }
 
-  /* Play mode overlays: cell background colors + center/corner pencilmarks.
-     Values (non-given) go into the cell input directly via renderPlayValues. */
-  function drawPlayOverlays() {
-    const N = state.puzzle.N;
-    const size = state.dom.cellSize;
-    const total = N * size;
-    const grid = state.dom.grid;
-    grid.querySelectorAll('.play-svg').forEach(n => n.remove());
-    /* Clear per-cell play tint each render. */
-    state.dom.cells.forEach(c => {
-      c.classList.remove('play-tinted');
-      c.style.removeProperty('--play-bg');
-    });
-    if (!state.play.values) return;
-    const inPlay = state.tool === 'play';
-    /* Colors are shown whenever the user has painted them (setter can see
-       them too so switching tools doesn't hide progress). */
-    for (let i = 0; i < N * N; i++) {
-      const co = state.play.colors[i];
-      if (!co) continue;
-      const cell = state.dom.cells[i]; if (!cell) continue;
-      cell.style.setProperty('--play-bg', PLAY_COLORS[(co - 1) % PLAY_COLORS.length]);
-      cell.classList.add('play-tinted');
-    }
-    if (!inPlay) return;
-    /* SVG for pencilmarks. */
-    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-    svg.setAttribute('class', 'play-svg');
-    svg.setAttribute('width', total);
-    svg.setAttribute('height', total);
-    svg.setAttribute('viewBox', `0 0 ${total} ${total}`);
-    const rowsForN = Math.ceil(Math.sqrt(N));
-    const colsForN = Math.ceil(N / rowsForN);
-    for (let i = 0; i < N * N; i++) {
-      const r = (i / N) | 0, c = i % N;
-      const given = state.puzzle.given[i];
-      const playV = state.play.values[i];
-      if (given || playV) continue;   /* solid digit already shown */
-      const cM = state.play.center[i];
-      const cM2 = state.play.corner[i];
-      /* Center pencilmarks: horizontal digit list at cell centre. */
-      if (cM) {
-        const digits = [];
-        for (let v = 1; v <= N; v++) if (cM & (1 << (v - 1))) digits.push(v);
-        if (digits.length) {
-          const t = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-          t.setAttribute('class', 'play-center');
-          t.setAttribute('x', c * size + size / 2);
-          t.setAttribute('y', r * size + size / 2);
-          t.setAttribute('text-anchor', 'middle');
-          t.setAttribute('dominant-baseline', 'central');
-          const fs = Math.max(7, size * (digits.length > 4 ? 0.16 : 0.22));
-          t.setAttribute('font-size', fs);
-          t.textContent = digits.map(digitToChar).join('');
-          svg.appendChild(t);
-        }
-      }
-      /* Corner pencilmarks: up to 4 digits in the corners. */
-      if (cM2) {
-        const digits = [];
-        for (let v = 1; v <= N; v++) if (cM2 & (1 << (v - 1))) digits.push(v);
-        const slots = [
-          [0.18, 0.22], [0.82, 0.22], [0.18, 0.78], [0.82, 0.78],
-          [0.5, 0.22],  [0.5, 0.78],  [0.18, 0.5],  [0.82, 0.5],
-        ];
-        digits.slice(0, slots.length).forEach((v, k) => {
-          const [fx, fy] = slots[k];
-          const t = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-          t.setAttribute('class', 'play-corner');
-          t.setAttribute('x', c * size + fx * size);
-          t.setAttribute('y', r * size + fy * size);
-          t.setAttribute('text-anchor', 'middle');
-          t.setAttribute('dominant-baseline', 'central');
-          t.setAttribute('font-size', Math.max(7, size * 0.18));
-          t.textContent = digitToChar(v);
-          svg.appendChild(t);
-        });
-      }
-    }
-    /* Player-drawn lines: rendered above pencilmarks. Each line uses a color
-       from PLAY_LINE_COLORS and traces snap-point coordinates through the
-       cells. In 'line' mode the overlay also acts as the pointer capture. */
-    const linesSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-    linesSvg.setAttribute('class', 'play-lines-svg' + (playEffectiveMode() === 'line' ? ' active' : ''));
-    linesSvg.setAttribute('width', total);
-    linesSvg.setAttribute('height', total);
-    linesSvg.setAttribute('viewBox', `0 0 ${total} ${total}`);
-    const drawLine = (line, alpha) => {
-      if (!line.points || line.points.length < 1) return;
-      const pts = line.points.map(pt => `${snapX(pt.gx, size)},${snapY(pt.gy, size)}`).join(' ');
-      const p = document.createElementNS('http://www.w3.org/2000/svg', 'polyline');
-      p.setAttribute('class', 'play-line');
-      p.setAttribute('points', pts);
-      p.setAttribute('stroke', PLAY_LINE_COLORS[(line.color - 1) % PLAY_LINE_COLORS.length] || '#000');
-      p.setAttribute('stroke-width', Math.max(2, size * 0.14));
-      p.setAttribute('fill', 'none');
-      p.setAttribute('stroke-linecap', 'round');
-      p.setAttribute('stroke-linejoin', 'round');
-      if (alpha != null) p.setAttribute('opacity', alpha);
-      linesSvg.appendChild(p);
-    };
-    for (const l of state.play.lines) drawLine(l, 0.9);
-    if (state.play.lineDraft) drawLine(state.play.lineDraft, 0.95);
-    /* Pointer-capture overlay: covers the grid when in line mode so drag
-       events snap to grid coordinates instead of firing per-cell handlers.
-       A transparent rect handles pointer events; the svg itself stays
-       pointer-events: none so it never blocks other overlays. */
-    if (playEffectiveMode() === 'line') {
-      const capture = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
-      capture.setAttribute('class', 'play-line-capture');
-      capture.setAttribute('x', 0);
-      capture.setAttribute('y', 0);
-      capture.setAttribute('width', total);
-      capture.setAttribute('height', total);
-      capture.setAttribute('fill', 'transparent');
-      capture.addEventListener('mousedown', e => {
-        e.preventDefault();
-        state.playLineDrag = true;
-        const snap = pointerSnap(e, size);
-        state.play.lineDraft = { color: state.play.lineColor, points: [snap] };
-        drawPlayOverlays();
-      });
-      capture.addEventListener('mousemove', e => {
-        if (!state.playLineDrag || !state.play.lineDraft) return;
-        const snap = pointerSnap(e, size);
-        const pts = state.play.lineDraft.points;
-        const last = pts[pts.length - 1];
-        if (!last || last.gx !== snap.gx || last.gy !== snap.gy) {
-          pts.push(snap);
-          drawPlayOverlays();
-        }
-      });
-      linesSvg.appendChild(capture);
-    }
-    grid.appendChild(linesSvg);
-    grid.appendChild(svg);
-  }
-
-  /* Grid-coordinate helpers for the line tool. Each cell contributes a
-     2x2 block of snap points (corners + centers), so a grid point (gx, gy)
-     is a half-cell offset in the range 0..2N. */
-  function snapX(gx, size) { return (gx * size) / 2; }
-  function snapY(gy, size) { return (gy * size) / 2; }
-  function pointerSnap(event, size) {
-    const grid = state.dom.grid;
-    const rect = grid.getBoundingClientRect();
-    const x = event.clientX - rect.left;
-    const y = event.clientY - rect.top;
-    const N = state.puzzle.N;
-    let gx = Math.round((x * 2) / size);
-    let gy = Math.round((y * 2) / size);
-    if (gx < 0) gx = 0; if (gx > 2 * N) gx = 2 * N;
-    if (gy < 0) gy = 0; if (gy > 2 * N) gy = 2 * N;
-    return { gx, gy };
-  }
-  function endPlayLineDraft() {
-    state.playLineDrag = false;
-    if (!state.play.lineDraft) return;
-    const d = state.play.lineDraft;
-    /* Only keep lines with two or more distinct snap points; single-tap
-       drafts leave nothing visible. */
-    if (d.points.length >= 2) state.play.lines.push(d);
-    state.play.lineDraft = null;
-    drawPlayOverlays();
-  }
-
   /* Pencilmark overlay: only rendered when state.pencilmarkOn is true and
      stats have been computed. */
   function drawPencilmarks() {
@@ -3211,9 +2731,6 @@ window.SudokuApp = (function () {
   function attachCellHandlers(input, i) {
     input.addEventListener('focus', () => {
       input.select();
-      /* Play mode uses lastFocused as the keypad target so keypad clicks
-         work without stealing focus from the grid cell. */
-      if (state && state.play) state.play.lastFocused = i;
     });
 
     input.addEventListener('mousedown', e => {
@@ -3235,7 +2752,6 @@ window.SudokuApp = (function () {
       else if (state.tool === 'rowIndex') { e.preventDefault(); state.rowIndexDrag = true; paintIndexLight(i, 'rowIndex'); }
       else if (state.tool === 'hitpoint') { e.preventDefault(); handleHitpointClick(i); }
       else if (state.tool === 'countCircle') { e.preventDefault(); state.ccDrag = null; paintCountCircleLight(i); }
-      else if (state.tool === 'play') { /* focus stays for keyboard entry */ handlePlayCellClick(i, e); }
     });
     input.addEventListener('mouseenter', () => {
       if (state.tool === 'cage' && state.cageDrag) applyCageDrag(i);
@@ -3249,7 +2765,6 @@ window.SudokuApp = (function () {
       else if (state.tool === 'colIndex' && state.colIndexDrag) paintIndexLight(i, 'colIndex');
       else if (state.tool === 'rowIndex' && state.rowIndexDrag) paintIndexLight(i, 'rowIndex');
       else if (state.tool === 'countCircle' && state.ccDrag != null) paintCountCircleLight(i);
-      else if (state.tool === 'play' && state.play.activeMode === 'color' && state.playColorDrag) paintPlayColorLight(i);
     });
 
     input.addEventListener('keydown', e => {
@@ -3259,41 +2774,6 @@ window.SudokuApp = (function () {
       if (e.key === 'ArrowLeft'  && idx % N > 0)     { e.preventDefault(); state.dom.cells[idx - 1].focus(); return; }
       if (e.key === 'ArrowDown'  && idx < N * (N - 1)) { e.preventDefault(); state.dom.cells[idx + N].focus(); return; }
       if (e.key === 'ArrowUp'    && idx >= N)         { e.preventDefault(); state.dom.cells[idx - N].focus(); return; }
-      if (state.tool === 'play') {
-        /* Play-mode key routing. Given cells are locked. */
-        ensurePlayState();
-        if (e.key === ' ') {
-          /* Space cycles modes without inserting a space into the input. */
-          e.preventDefault();
-          cyclePlayMode();
-          return;
-        }
-        if (state.puzzle.given[idx]) {
-          /* Given cells accept nothing except navigation. */
-          if (e.key === 'Tab' || e.key === 'Enter') return;
-          e.preventDefault();
-          return;
-        }
-        if (e.key === 'Backspace' || e.key === 'Delete') {
-          e.preventDefault();
-          state.play.values[idx] = 0;
-          state.play.center[idx] = 0;
-          state.play.corner[idx] = 0;
-          input.value = '';
-          /* Value cleared → run the fast play analyzer to update conflict marks. */
-          playAnalyze();
-          return;
-        }
-        if (isDigitKey(e.key, N)) {
-          e.preventDefault();
-          const v = charToDigit(e.key);
-          applyPlayDigit(idx, v, e.shiftKey, e.ctrlKey || e.metaKey);
-          return;
-        }
-        if (e.key === 'Tab' || e.key === 'Enter') return;
-        e.preventDefault();
-        return;
-      }
       if (state.tool !== 'digit') { e.preventDefault(); return; }
       if (e.key === 'Backspace' || e.key === 'Delete') {
         e.preventDefault();
@@ -3322,10 +2802,6 @@ window.SudokuApp = (function () {
       const N = state.puzzle.N;
       const raw = e.target.value.toUpperCase();
       const v = charToDigit(raw);
-      /* Play mode: input events are ignored — Play keydown already handled the
-         write into state.play, and we don't want the input's own value change
-         to leak into the setter-side given/values arrays. */
-      if (state.tool === 'play') return;
       if (v >= 1 && v <= N) {
         state.puzzle.values[i] = v;
         state.puzzle.given[i] = 1;
@@ -3681,13 +3157,6 @@ window.SudokuApp = (function () {
     /* Clear placeholders + errors. */
     state.dom.cells.forEach(c => { c.classList.remove('error'); c.placeholder = ''; c.classList.remove('hint-only'); });
 
-    /* Play mode has its own lightweight analyzer that skips the solver
-       worker entirely — see playAnalyze. */
-    if (state.tool === 'play') {
-      playAnalyze();
-      updateNav();
-      return;
-    }
     const conflicts = Core.findConflicts(state.puzzle);
     if (conflicts.size > 0) {
       conflicts.forEach(i => state.dom.cells[i].classList.add('error'));
@@ -3963,46 +3432,9 @@ window.SudokuApp = (function () {
       if (state.rowIndexDrag) { state.rowIndexDrag = false; state.__rowIndexPaint = null; analyze(); }
       if (state.erDrag) endERDrag();
       if (state.ccDrag != null) { state.ccDrag = null; analyze(); }
-      if (state.playColorDrag) { state.playColorDrag = false; state.__playColorMode = null; }
-      if (state.playLineDrag)  { endPlayLineDraft(); }
     };
     document.addEventListener('mouseup', endAll);
     document.addEventListener('mouseleave', endAll);
-
-    /* Modifier keys temporarily switch play-mode input target. We map:
-         Ctrl+Shift → color, Ctrl → center, Shift → corner
-       and reset the moment the modifier is released. The active-mode chip
-       updates live so users see the temp mode take effect. */
-    function computeTemp(e) {
-      if (state.tool !== 'play') return null;
-      const ctrl = e.ctrlKey || e.metaKey;
-      if (ctrl && e.shiftKey) return 'color';
-      if (ctrl) return 'center';
-      if (e.shiftKey) return 'corner';
-      return null;
-    }
-    function updateTempFromEvent(e) {
-      const t = computeTemp(e);
-      if (t !== state.play.tempMode) {
-        state.play.tempMode = t;
-        refreshPlayModeUI();
-      }
-    }
-    document.addEventListener('keydown', e => {
-      if (!state) return;
-      updateTempFromEvent(e);
-    });
-    document.addEventListener('keyup', e => {
-      if (!state) return;
-      updateTempFromEvent(e);
-    });
-    /* On visibility / focus loss any held modifier is effectively released. */
-    window.addEventListener('blur', () => {
-      if (state && state.play && state.play.tempMode) {
-        state.play.tempMode = null;
-        refreshPlayModeUI();
-      }
-    });
   }
 
   /* ---------- Top-level render ---------- */
@@ -4118,106 +3550,23 @@ window.SudokuApp = (function () {
         }
       },
     });
+    /* SudokuPad hand-off — the built-in play mode is gone; the button opens
+       the puzzle on sudokupad.app in a new tab for the full play UX. */
+    const sudokupadBtn = btn({ en: '▶ Play on SudokuPad', zh: '▶ 在 SudokuPad 上游玩' }, {
+      onClick: openOnSudokuPad,
+    });
+    sudokupadBtn.title = L({
+      en: 'Open this puzzle on sudokupad.app for the full play experience (timer, check, undo/redo, snapshots). Constraints not natively supported by SudokuPad are drawn as colored lines and explained in the puzzle description.',
+      zh: '在 sudokupad.app 上打开此谜题以获得完整的游玩体验（计时、检查、撤销/重做、快照）。SudokuPad 不原生支持的约束以彩色线条绘制并在题目说明中解释。',
+    });
     solveRow.append(solveBtn, state.dom.prevBtn, state.dom.nextBtn, liveChip, pencilBtn);
-    manageRow.append(resetBtn, exampleBtn, shareBtn, wipeBtn);
-    /* In Play mode, hide the solver controls so the puzzle isn't spoiled and
-       show a keypad instead. `share` is still useful (persists link). */
-    if (state.tool === 'play') {
-      const keypadWrap = el('div', 'play-keypad-wrap');
-      state.dom.keypadWrap = keypadWrap;
-      buildKeypad(keypadWrap);
-      actionsWrap.append(keypadWrap);
-      const playRow = el('div', 'solver-actions');
-      const sudokupadBtn = btn({ en: 'Play on SudokuPad', zh: '在 SudokuPad 上游玩' }, {
-        onClick: openOnSudokuPad,
-      });
-      sudokupadBtn.title = L({
-        en: 'Open this puzzle on sudokupad.app for the full play experience (timer, check, undo/redo, snapshots).',
-        zh: '在 sudokupad.app 上打开此谜题以获得完整的游玩体验（计时、检查、撤销/重做、快照）。',
-      });
-      playRow.append(sudokupadBtn, shareBtn);
-      actionsWrap.append(playRow);
-    } else {
-      actionsWrap.append(solveRow, manageRow);
-    }
+    manageRow.append(resetBtn, exampleBtn, shareBtn, sudokupadBtn, wipeBtn);
+    actionsWrap.append(solveRow, manageRow);
     container.appendChild(actionsWrap);
 
     analyze();
   }
 
-  /* On-screen keypad. Rebuilt on mode change so the labels reflect the
-     current effective mode. Clicking a digit routes through applyPlayDigit
-     targeting `state.play.lastFocused`; if no cell is focused (fresh entry)
-     the click is a no-op — matching how physical keys already behave. */
-  function buildKeypad(host) {
-    host.innerHTML = '';
-    const N = state.puzzle.N;
-    ensurePlayState();
-    const mode = playEffectiveMode();
-    const modeLabelObj = (PLAY_MODE_LABELS.find(m => m.key === mode) || PLAY_MODE_LABELS[0]);
-    const label = el('div', 'keypad-label');
-    label.textContent = L({
-      en: `Keypad — ${modeLabelObj.en}${state.play.tempMode ? ' (held)' : ''}`,
-      zh: `键盘 — ${modeLabelObj.zh}${state.play.tempMode ? '（临时）' : ''}`,
-    });
-    host.appendChild(label);
-    const grid = el('div', 'keypad-grid');
-    /* Use ⌈√N⌉ columns to accommodate up to 16×16 grids in a square layout. */
-    const cols = Math.ceil(Math.sqrt(N));
-    grid.style.gridTemplateColumns = `repeat(${cols}, minmax(2.2rem, 1fr))`;
-    for (let v = 1; v <= N; v++) {
-      const key = el('button', 'keypad-key');
-      /* Mode-specific button decoration. */
-      if (mode === 'color') {
-        const sw = el('span', 'keypad-swatch');
-        sw.style.background = PLAY_COLORS[(v - 1) % PLAY_COLORS.length];
-        key.appendChild(sw);
-      } else if (mode === 'line') {
-        const sw = el('span', 'keypad-swatch');
-        sw.style.background = PLAY_LINE_COLORS[(v - 1) % PLAY_LINE_COLORS.length];
-        key.appendChild(sw);
-      }
-      key.appendChild(document.createTextNode(digitToChar(v)));
-      /* Preserve focus so keypad clicks target the last-focused cell. */
-      key.addEventListener('mousedown', e => e.preventDefault());
-      key.addEventListener('click', () => {
-        const idx = state.play.lastFocused;
-        if (idx < 0) {
-          /* Line/color modes can still act globally (line color, fill pick). */
-          if (mode === 'line') {
-            state.play.lineColor = ((v - 1) % PLAY_LINE_COLORS.length) + 1;
-            refreshPlayModeUI();
-          } else if (mode === 'color') {
-            state.play.colorPick = ((v - 1) % PLAY_COLORS.length) + 1;
-            refreshPlayModeUI();
-          }
-          return;
-        }
-        applyPlayDigit(idx, v, false, false);
-      });
-      grid.appendChild(key);
-    }
-    host.appendChild(grid);
-    /* Clear button targets the last-focused cell. */
-    const controls = el('div', 'keypad-controls');
-    const clearBtn = btn({ en: 'Clear cell', zh: '清空格子' }, {
-      secondary: true,
-      onClick: () => {
-        const idx = state.play.lastFocused;
-        if (idx < 0 || state.puzzle.given[idx]) return;
-        state.play.values[idx] = 0;
-        state.play.center[idx] = 0;
-        state.play.corner[idx] = 0;
-        const cell = state.dom.cells[idx];
-        if (cell) cell.value = '';
-        playAnalyze();
-      },
-    });
-    /* mousedown-preserve-focus for the clear button too. */
-    clearBtn.addEventListener('mousedown', e => e.preventDefault());
-    controls.appendChild(clearBtn);
-    host.appendChild(controls);
-  }
 
   function loadExample() {
     const N = state.puzzle.N;
