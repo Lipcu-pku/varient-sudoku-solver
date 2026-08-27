@@ -100,7 +100,7 @@ self.SudokuCore = (function () {
       sandwich: { top: new Uint8Array(N), bottom: new Uint8Array(N),
                   left: new Uint8Array(N), right: new Uint8Array(N) },
       rainbow:  new Int8Array(N * N),
-      flags:   { diagonal:false, antiKnight:false, antiKing:false, antiConsecutive:false },
+      flags:   { diagonal:false, antiKnight:false, antiKing:false, antiConsecutive:false, disjoint:false },
     };
     /* Plugin-managed fields (constraints/*.js). */
     for (const c of pluginList()) if (c.newFields) c.newFields(p);

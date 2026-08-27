@@ -99,12 +99,21 @@ window.SudokuApp = (function () {
       colIndex:  { en: 'Column Index', zh: '列索引' },
       rowIndex:  { en: 'Row Index',    zh: '行索引' },
       hitpoint:  { en: 'Hitpoint',     zh: '命中箭头' },
+      extraRegion:{ en: 'Extra Region', zh: '额外宫' },
+      slowThermo:{ en: 'Slow Thermo',  zh: '慢速温度计' },
+      between:   { en: 'Between',      zh: '介于线' },
+      lockout:   { en: 'Lockout',      zh: '禁区线' },
+      sequence:  { en: 'Sequence',     zh: '等差线' },
+      xsum:      { en: 'X-Sums',       zh: 'X 和' },
+      countCircle:{ en: 'Count Circle', zh: '计数圆' },
+      play:      { en: '▶ Play',       zh: '▶ 游玩' },
     },
     flag: {
       diagonal:        { en: 'X (diagonals)',     zh: 'X（对角）' },
       antiKnight:      { en: 'Anti-Knight',       zh: '反马步' },
       antiKing:        { en: 'Anti-King',         zh: '反王步' },
       antiConsecutive: { en: 'Anti-Consecutive',  zh: '反邻数' },
+      disjoint:        { en: 'Disjoint Groups',   zh: '同位置组' },
     },
     hint: {
       digit:  { en: 'Type 1..9 / A..G to place a given. Backspace clears.',
@@ -163,6 +172,38 @@ window.SudokuApp = (function () {
         en: 'Pick one of the 8 compass directions, then click a cell to toggle that arrow on it. A cell may have multiple arrows. The cell\'s digit equals the sum over each arrow direction of downstream cells whose value V equals its distance k from the arrow cell.',
         zh: '先选择 8 方向中的一个，再点击格子切换该方向的箭头。同一格可有多个方向。该格数字 D 等于：对每个方向沿该方向前进，若第 k 格数字 V 等于 k，则将 V 计入总和；总和等于 D。',
       },
+      extraRegion: {
+        en: 'Pick a color, then paint cells that share a "no-repeat" region. Each color is a separate region — digits cannot repeat within one. "Finish region" to start a new one.',
+        zh: '选择颜色后，绘制额外宫的格子。同一颜色的格子构成一个"不可重复"的宫，其中数字互不相同。按"完成额外宫"开始新的一个。',
+      },
+      slowThermo: {
+        en: 'Same as thermo, but digits are non-strictly increasing along the path (repeats allowed). First cell is the bulb.',
+        zh: '类似温度计，但数字沿路径非严格递增（允许相等）。首格为球端。',
+      },
+      between: {
+        en: 'Draw a line whose two ends are circled bulbs. Digits at every middle cell must be strictly between the two endpoints.',
+        zh: '绘制一条两端为圆圈的线。中间每个格子的数字必须严格介于两端点之间。',
+      },
+      lockout: {
+        en: 'Draw a line whose two ends are diamond bulbs. Endpoints must differ by ≥ 4, and every middle cell must be strictly outside [min, max] of the endpoints.',
+        zh: '绘制一条两端为菱形的线。端点数字之差 ≥ 4，中间格必须严格位于两端点区间 [min, max] 之外。',
+      },
+      sequence: {
+        en: 'Draw a line. Digits along the line form an arithmetic progression (any step, including 0).',
+        zh: '绘制一条线。线上数字构成等差数列（差值任意，可为 0）。',
+      },
+      xsum: {
+        en: 'Type an X-sum clue into any outer edge cell: the first digit read from the outside is X, and the first X digits sum to the clue value.',
+        zh: '在任意外圈格中输入 X 和线索：从外侧读到的第一位数字为 X，且前 X 个数字之和等于该线索值。',
+      },
+      countCircle: {
+        en: 'Click or drag cells to add or remove circles. If digit v appears on any circled cell, exactly v circled cells contain v.',
+        zh: '点击或拖动格子添加或移除圆圈。若数字 v 出现在任一圆圈内，则恰好有 v 个圆圈内含 v。',
+      },
+      play: {
+        en: 'Play mode: enter digits, Shift+digit for center pencilmarks, Ctrl+digit for corner pencilmarks. Pick a color chip to paint cell backgrounds. All puzzle constraints are conflict-checked live.',
+        zh: '游玩模式：直接输入数字；Shift+数字为中心候选，Ctrl+数字为角落候选。选择颜色可为格子上色。所有约束均实时冲突检测。',
+      },
     },
     solve:   { en: 'Solve',           zh: '求解' },
     prev:    { en: '◀ Previous',      zh: '◀ 上一解' },
@@ -193,6 +234,12 @@ window.SudokuApp = (function () {
     parOdd:     { en: 'Odd (○)',      zh: '奇（○）' },
     parEven:    { en: 'Even (□)',     zh: '偶（□）' },
     clearParity:{ en: 'Clear all parity', zh: '清空所有奇偶标记' },
+    finishER:   { en: 'Finish region', zh: '完成额外宫' },
+    delLastER:  { en: 'Delete last region', zh: '删除上一额外宫' },
+    finishSlow: { en: 'Finish slow thermo', zh: '完成慢温度计' },
+    finishBet:  { en: 'Finish between line', zh: '完成介于线' },
+    finishLo:   { en: 'Finish lockout',   zh: '完成禁区线' },
+    finishSeq:  { en: 'Finish sequence',  zh: '完成等差线' },
   };
 
   /* Which puzzle field each line-based tool uses. */
@@ -204,10 +251,17 @@ window.SudokuApp = (function () {
     palindrome: 'palindromes',
     entropic:   'entropics',
     parityLine: 'parityLines',
+    slowThermo: 'slowThermos',
+    between:    'betweenLines',
+    lockout:    'lockoutLines',
+    sequence:   'sequenceLines',
   };
   /* Tool ids that share the generic line-draft workflow (Finish / Delete-last
      buttons, click-or-drag paint via addLineCellLight). */
   const LINE_TOOLS = new Set(Object.keys(LINE_FIELD));
+  /* Line tools whose first cell has a distinct meaning (bulb / pillar), so
+     the drafter should not close the loop back into it. */
+  const LINE_TOOLS_ANCHORED = new Set(['slowThermo']);
 
   const EXAMPLES = {
     9: [
@@ -270,6 +324,23 @@ window.SudokuApp = (function () {
       rowIndexDrag: false,
       /* Hitpoint tool: which direction to toggle when a cell is clicked. */
       hitpointDir: 3,   /* SE by default */
+      /* Extra-region draft (multi-cell region, no sum). */
+      erDraft: { cells: [] },
+      erDrag: null,     /* null | { mode: 'add' | 'remove' } */
+      /* Extra-region color index (cycles through the spectra palette). */
+      erColor: 0,
+      /* Count-circle paint state. */
+      ccDrag: null,     /* null | 0 | 1 (drag intent: clear vs. mark) */
+      /* Play mode: solver-side state kept separately from setter-side puzzle
+         so switching tabs preserves both. */
+      play: {
+        values:  null,   /* Uint8Array or null (created on first entry) */
+        center:  null,   /* Uint16Array(N*N) — bitmask of center pencilmarks */
+        corner:  null,   /* Uint16Array(N*N) — bitmask of corner pencilmarks */
+        colors:  null,   /* Int8Array(N*N) */
+        colorPick: 1,
+        activeMode: 'value',  /* 'value' | 'center' | 'corner' | 'color' */
+      },
       /* Pencilmark analysis */
       pencilmarkOn: false,
       pencilmarkStats: null,   /* { freq: Uint16Array(N*N*(N+1)), maxPerCell: Uint16Array(N*N) } */
@@ -399,8 +470,24 @@ window.SudokuApp = (function () {
       chip._label = T.flag[k];
       chip.textContent = L(T.flag[k]);
       chip.classList.toggle('active', !!state.puzzle.flags[k]);
+      /* Disjoint groups depend on rectangular boxes: with jigsaw regions the
+         "position within a box" is not well defined. Grey the chip out when
+         jigsaw regions are present, and refuse to activate. */
+      if (k === 'disjoint' && hasCustomRegions()) {
+        chip.disabled = true;
+        chip.classList.remove('active');
+        chip.title = L({
+          en: 'Disjoint groups are incompatible with jigsaw regions — reset regions to boxes first.',
+          zh: '同位置组与异形宫互斥 — 请先将宫格恢复为矩形。',
+        });
+      }
       chip.addEventListener('click', () => {
+        if (chip.disabled) return;
         state.puzzle.flags[k] = !state.puzzle.flags[k];
+        /* Turning on disjoint while jigsaw is active would silently produce
+           an infeasible puzzle — that path is blocked at the setter level via
+           the disabled check above and the region painter (see paintRegionLight).
+           The chip does not need to touch other flags. */
         chip.classList.toggle('active', state.puzzle.flags[k]);
         analyze();
       });
@@ -412,13 +499,14 @@ window.SudokuApp = (function () {
   /* Tool tabs are grouped by category so related tools sit on the same row.
      Each group renders as its own centered pill row inside `.tool-tabs-wrap`. */
   const TOOL_GROUPS = [
-    { label: { en: 'Basic',      zh: '基础'   }, tools: ['digit', 'region', 'rainbow', 'cage'] },
-    { label: { en: 'Lines',      zh: '线约束' }, tools: ['thermo', 'whisper', 'regionSum', 'modular', 'renban', 'palindrome', 'entropic', 'parityLine'] },
+    { label: { en: 'Basic',      zh: '基础'   }, tools: ['digit', 'region', 'rainbow', 'cage', 'extraRegion'] },
+    { label: { en: 'Lines',      zh: '线约束' }, tools: ['thermo', 'slowThermo', 'whisper', 'regionSum', 'modular', 'renban', 'palindrome', 'entropic', 'parityLine', 'between', 'lockout', 'sequence'] },
     { label: { en: 'Arrows',     zh: '箭头'   }, tools: ['arrow', 'hitpoint'] },
-    { label: { en: 'Edge clues', zh: '外圈线索' }, tools: ['sky', 'sandwich', 'littleKiller'] },
+    { label: { en: 'Edge clues', zh: '外圈线索' }, tools: ['sky', 'sandwich', 'littleKiller', 'xsum'] },
     { label: { en: 'Edge marks', zh: '边标记' }, tools: ['kropki', 'compare', 'xv'] },
     { label: { en: 'Point marks',zh: '点标记' }, tools: ['quadruple'] },
-    { label: { en: 'Cell marks', zh: '格子标记' }, tools: ['parity', 'colIndex', 'rowIndex'] },
+    { label: { en: 'Cell marks', zh: '格子标记' }, tools: ['parity', 'colIndex', 'rowIndex', 'countCircle'] },
+    { label: { en: 'Solve',      zh: '游玩'   }, tools: ['play'] },
   ];
 
   function buildToolTabs(host) {
@@ -487,6 +575,10 @@ window.SudokuApp = (function () {
     if (state.tool === 'colIndex')  fillColIndexPanel(p);
     if (state.tool === 'rowIndex')  fillRowIndexPanel(p);
     if (state.tool === 'hitpoint')  fillHitpointPanel(p);
+    if (state.tool === 'extraRegion') fillExtraRegionPanel(p);
+    if (state.tool === 'xsum')      fillXSumPanel(p);
+    if (state.tool === 'countCircle') fillCountCirclePanel(p);
+    if (state.tool === 'play')      fillPlayPanel(p);
   }
 
   /* Shared: a chip button with a swatch element for pair/parity pickers. */
@@ -1190,6 +1282,226 @@ window.SudokuApp = (function () {
     rebuild();
   }
 
+  /* ---------- Extra Region tool ---------- */
+  function fillExtraRegionPanel(p) {
+    const N = state.puzzle.N;
+    const draft = state.erDraft;
+    p.appendChild(el('span', null,
+      L({ en: `Selected: ${draft.cells.length} cells`,
+          zh: `已选：${draft.cells.length} 格` })));
+    /* Color picker for the next region to add. */
+    p.appendChild(el('span', null, L({ en: 'Color', zh: '颜色' }) + ':'));
+    for (let k = 0; k < Math.min(8, N); k++) {
+      const chip = el('button', 'chip' + (state.erColor === k ? ' active' : ''));
+      const sw = el('span', 'swatch');
+      sw.style.background = extraRegionColor(k);
+      chip.appendChild(sw);
+      chip.appendChild(document.createTextNode(String(k + 1)));
+      chip.addEventListener('click', () => { state.erColor = k; fillToolPanel(); });
+      p.appendChild(chip);
+    }
+    p.appendChild(btn(T.finishER, { onClick: finishExtraRegion }));
+    p.appendChild(btn({ en: 'Cancel', zh: '取消' }, {
+      secondary: true,
+      onClick: () => { state.erDraft = { cells: [] }; rebuild(); },
+    }));
+    const list = state.puzzle.extraRegions || [];
+    p.appendChild(el('span', null,
+      L({ en: `Regions: ${list.length}`, zh: `额外宫数：${list.length}` })));
+    if (list.length) {
+      p.appendChild(btn(T.delLastER, {
+        secondary: true,
+        onClick: () => { list.pop(); rebuild(); },
+      }));
+    }
+  }
+  function finishExtraRegion() {
+    const draft = state.erDraft;
+    if (!draft.cells.length) return;
+    (state.puzzle.extraRegions = state.puzzle.extraRegions || []).push({
+      cells: [...draft.cells],
+      color: state.erColor,
+    });
+    state.erDraft = { cells: [] };
+    state.erColor = (state.erColor + 1) % 8;
+    rebuild();
+  }
+  /* Extra-region palette: distinct pastel-y tints, offset from Spectradoku so
+     the two constraints don't share a colorway. */
+  const EXTRA_REGION_HUES = [265, 45, 335, 145, 205, 25, 105, 305];
+  function extraRegionColor(idx) {
+    const h = EXTRA_REGION_HUES[idx % EXTRA_REGION_HUES.length];
+    const theme = AppTheme.get();
+    return theme === 'light'
+      ? `hsl(${h}, 60%, 82%)`
+      : `hsl(${h}, 40%, 30%)`;
+  }
+
+  /* Cage-style click-drag for extra region painting: begin/apply/end. */
+  function beginERDrag(i) {
+    const draft = state.erDraft;
+    /* Clicking a cell owned by an existing extra region unfreezes it into
+       the draft, same UX as cage clicks. */
+    const list = state.puzzle.extraRegions || [];
+    for (let k = 0; k < list.length; k++) {
+      if (list[k].cells.includes(i)) {
+        if (draft.cells.length) finishExtraRegion();
+        const er = list.splice(k, 1)[0];
+        state.erDraft = { cells: [...er.cells] };
+        state.erColor = er.color | 0;
+        state.erDrag = { mode: 'add' };
+        rebuild();
+        return;
+      }
+    }
+    const has = draft.cells.indexOf(i) >= 0;
+    state.erDrag = { mode: has ? 'remove' : 'add' };
+    applyERDrag(i);
+  }
+  function applyERDrag(i) {
+    if (!state.erDrag) return;
+    const arr = state.erDraft.cells;
+    const at = arr.indexOf(i);
+    if (state.erDrag.mode === 'add' && at < 0) arr.push(i);
+    else if (state.erDrag.mode === 'remove' && at >= 0) arr.splice(at, 1);
+    else return;
+    fillToolPanel();
+    drawExtraRegions();
+  }
+  function endERDrag() { if (state.erDrag) { state.erDrag = null; analyze(); } }
+
+  /* ---------- X-Sums edge panel ---------- */
+  function fillXSumPanel(p) {
+    const xs = state.puzzle.xsum;
+    if (!xs) return;
+    const total = ['top', 'bottom', 'left', 'right']
+      .reduce((n, side) => n + Array.prototype.filter.call(xs[side], v => !!v).length, 0);
+    p.appendChild(el('span', null,
+      L({ en: `Clues set: ${total}`, zh: `已设线索：${total}` })));
+    p.appendChild(btn({ en: 'Clear all clues', zh: '清空全部线索' }, {
+      secondary: true,
+      onClick: () => {
+        xs.top.fill(0); xs.bottom.fill(0); xs.left.fill(0); xs.right.fill(0);
+        rebuild();
+      },
+    }));
+  }
+
+  /* ---------- Count-Circle panel ---------- */
+  function fillCountCirclePanel(p) {
+    const cc = state.puzzle.countCircles || new Int8Array(state.puzzle.N * state.puzzle.N);
+    let total = 0;
+    for (let i = 0; i < cc.length; i++) if (cc[i]) total++;
+    p.appendChild(el('span', null,
+      L({ en: `Circles: ${total}`, zh: `圆圈数：${total}` })));
+    if (total) {
+      p.appendChild(btn({ en: 'Clear all', zh: '清空全部' }, {
+        secondary: true,
+        onClick: () => { cc.fill(0); rebuild(); },
+      }));
+    }
+  }
+  function paintCountCircleLight(i) {
+    const cc = state.puzzle.countCircles;
+    if (!cc) return;
+    if (state.ccDrag == null) state.ccDrag = cc[i] ? 0 : 1;
+    if (cc[i] === state.ccDrag) return;
+    cc[i] = state.ccDrag;
+    drawCountCircles();
+  }
+
+  /* Play-mode click: dispatches to color painting when the "Color" sub-mode
+     is active. Digit / pencilmark editing is keyboard-driven, so all we do
+     for value modes is let the click focus the cell. */
+  function handlePlayCellClick(i, e) {
+    ensurePlayState();
+    if (state.play.activeMode === 'color') {
+      e.preventDefault();
+      state.playColorDrag = true;
+      state.__playColorMode = null;
+      paintPlayColorLight(i);
+    }
+  }
+  function paintPlayColorLight(i) {
+    ensurePlayState();
+    const pick = state.play.colorPick;
+    /* First-cell decides intent: painting or clearing. */
+    if (state.__playColorMode == null) {
+      state.__playColorMode = state.play.colors[i] === pick ? 0 : pick;
+    }
+    const target = state.__playColorMode;
+    if (state.play.colors[i] === target) return;
+    state.play.colors[i] = target;
+    drawPlayOverlays();
+  }
+
+  /* ---------- Play mode panel ---------- */
+  /* Play-mode color palette: 8 highlight tints that layer well over grid cells
+     and stay legible in both themes. */
+  const PLAY_COLORS = [
+    '#fca5a5', '#fdba74', '#fde68a', '#bef264',
+    '#67e8f9', '#93c5fd', '#c4b5fd', '#f9a8d4',
+  ];
+  function ensurePlayState() {
+    const N = state.puzzle.N;
+    const total = N * N;
+    if (!state.play.values  || state.play.values.length  !== total) state.play.values  = new Uint8Array(total);
+    if (!state.play.center  || state.play.center.length  !== total) state.play.center  = new Uint16Array(total);
+    if (!state.play.corner  || state.play.corner.length  !== total) state.play.corner  = new Uint16Array(total);
+    if (!state.play.colors  || state.play.colors.length  !== total) state.play.colors  = new Int8Array(total);
+  }
+
+  function fillPlayPanel(p) {
+    ensurePlayState();
+    const modes = [
+      { key: 'value',  en: 'Digit',        zh: '数字' },
+      { key: 'center', en: 'Center pm',    zh: '中候选' },
+      { key: 'corner', en: 'Corner pm',    zh: '角候选' },
+      { key: 'color',  en: 'Color',        zh: '颜色' },
+    ];
+    p.appendChild(el('span', null, L({ en: 'Mode', zh: '模式' }) + ':'));
+    modes.forEach(m => {
+      const chip = el('button', 'chip' + (state.play.activeMode === m.key ? ' active' : ''));
+      chip.textContent = L({ en: m.en, zh: m.zh });
+      chip.addEventListener('click', () => { state.play.activeMode = m.key; fillToolPanel(); });
+      p.appendChild(chip);
+    });
+    if (state.play.activeMode === 'color') {
+      p.appendChild(el('span', null, L({ en: 'Color', zh: '颜色' }) + ':'));
+      for (let k = 0; k < PLAY_COLORS.length; k++) {
+        const chip = el('button', 'chip' + (state.play.colorPick === k + 1 ? ' active' : ''));
+        const sw = el('span', 'swatch');
+        sw.style.background = PLAY_COLORS[k];
+        chip.appendChild(sw);
+        chip.appendChild(document.createTextNode(String(k + 1)));
+        chip.addEventListener('click', () => { state.play.colorPick = k + 1; fillToolPanel(); });
+        p.appendChild(chip);
+      }
+      p.appendChild(btn({ en: 'Clear all colors', zh: '清空所有颜色' }, {
+        secondary: true,
+        onClick: () => { state.play.colors.fill(0); rebuild(); },
+      }));
+    }
+    p.appendChild(btn({ en: 'Clear play input', zh: '清空游玩输入' }, {
+      secondary: true,
+      onClick: () => {
+        state.play.values.fill(0);
+        state.play.center.fill(0);
+        state.play.corner.fill(0);
+        state.play.colors.fill(0);
+        rebuild();
+      },
+    }));
+    const hint = el('span', 'hint');
+    hint.textContent = L({
+      en: 'Keys: 1-9/A-G digit, Shift+key center pm, Ctrl+key corner pm, Backspace clears. Given cells are locked.',
+      zh: '按键：1-9/A-G 输入数字；Shift+键为中候选；Ctrl+键为角候选；Backspace 清除。原题已知格锁定。',
+    });
+    hint.style.flex = '1 1 100%';
+    hint.style.textAlign = 'center';
+    p.appendChild(hint);
+  }
+
   /* ---------- Grid + frame (with skyscraper edges) ---------- */
   function cellSize(N) {
     /* Shrink cells so 16×16 still fits comfortably. */
@@ -1204,6 +1516,7 @@ window.SudokuApp = (function () {
     const size = cellSize(N);
     const skyMode = state.tool === 'sky' ? 'sky'
                   : state.tool === 'sandwich' ? 'sandwich'
+                  : state.tool === 'xsum' ? 'xsum'
                   : null;
     const showLK = state.tool === 'littleKiller' ||
                   (state.puzzle.littleKillers && state.puzzle.littleKillers.length);
@@ -1212,6 +1525,7 @@ window.SudokuApp = (function () {
     const makeEdge = (side, idx) => {
       if (edgeMode === 'sandwich') return makeSandwich(side, idx);
       if (edgeMode === 'sky')      return makeSky(side, idx);
+      if (edgeMode === 'xsum')     return makeXSum(side, idx);
       return makeLK(side, idx);
     };
     const frame = el('div', 'sudoku-frame');
@@ -1285,6 +1599,9 @@ window.SudokuApp = (function () {
   function makeSandwich(side, idx) {
     return makeEdgeCell('sandwich', side, idx);
   }
+  function makeXSum(side, idx) {
+    return makeEdgeCell('xsum', side, idx);
+  }
   /* Shared edge-cell factory. `kind` selects the field, class, and clue-range:
      - sky:      1..N     (visible skyscraper count)
      - sandwich: 0..maxS  (sum between 1 and N; two digits for N ≥ 6). */
@@ -1292,24 +1609,32 @@ window.SudokuApp = (function () {
     const N = state.puzzle.N;
     const arr = state.puzzle[kind][side];
     const val = arr[idx];
-    const cls = kind === 'sandwich' ? 'sandwich-cell' : 'sky-cell';
+    const cls = kind === 'sandwich' ? 'sandwich-cell'
+              : kind === 'xsum'     ? 'xsum-cell'
+              : 'sky-cell';
     const cell = el('input', cls + (val ? ' filled' : ''));
     cell.type = 'text';
     cell.autocomplete = 'off';
-    /* Sandwich total can exceed 9 (N=9 max between-sum is 35), so allow 2+ digits. */
-    cell.maxLength = kind === 'sandwich' ? 3 : 2;
+    /* Sandwich / X-Sum totals can exceed 9; allow multi-digit input. */
+    cell.maxLength = (kind === 'sandwich' || kind === 'xsum') ? 3 : 2;
     cell.value = val ? String(val) : '';
     const maxSandwich = Math.max(0, (N * (N + 1)) / 2 - 1 - N);  /* sum of 2..N-1 */
+    const maxXSum = (N * (N + 1)) / 2;                           /* sum of 1..N */
     cell.title = kind === 'sky'
       ? L({ en: `Skyscrapers visible 1..${N} (blank clears)`,
             zh: `可见摩天楼数 1..${N}（留空清除）` })
+      : kind === 'xsum'
+      ? L({ en: `X-sum: first digit X, sum of first X digits 1..${maxXSum}`,
+            zh: `X 和：首格为 X，前 X 个数字之和 1..${maxXSum}` })
       : L({ en: `Sandwich sum 0..${maxSandwich} between 1 and ${N}`,
             zh: `1 与 ${N} 之间的数字之和 0..${maxSandwich}` });
     if (side === 'top') {
       cell.style.gridColumn = (idx + 2);
       cell.style.gridRow = '1';
     }
-    const maxVal = kind === 'sky' ? N : maxSandwich;
+    const maxVal = kind === 'sky' ? N
+                 : kind === 'xsum' ? maxXSum
+                 : maxSandwich;
     cell.addEventListener('focus', () => cell.select());
     cell.addEventListener('input', () => {
       const digits = cell.value.replace(/[^0-9]/g, '');
@@ -1433,7 +1758,18 @@ window.SudokuApp = (function () {
         input.style.setProperty('--rainbow-bg', spectraColor(rainbow[i] - 1));
         input.classList.add('rainbow-tinted');
       }
-      input.value = values[i] ? digitToChar(values[i]) : '';
+      /* In Play mode, non-given cells show the player's entered digit (if any)
+         rather than the setter's clue field. Given cells always show the puzzle
+         value with the .given styling so they stay locked-looking. */
+      let display = '';
+      if (values[i] && given[i]) display = digitToChar(values[i]);
+      else if (state.tool === 'play' && state.play.values && state.play.values[i]) {
+        display = digitToChar(state.play.values[i]);
+        input.classList.add('play-entry');
+      } else if (values[i]) {
+        display = digitToChar(values[i]);
+      }
+      input.value = display;
       if (values[i] && given[i]) input.classList.add('given');
       input.dataset.idx = i;
       attachCellHandlers(input, i);
@@ -1475,6 +1811,20 @@ window.SudokuApp = (function () {
 
     /* Hitpoint per-cell arrows. */
     drawHitpointArrows();
+
+    /* Extra regions (colored tint + dashed outline). */
+    drawExtraRegions();
+
+    /* Count-circle overlay (small ring inside each marked cell). */
+    drawCountCircles();
+
+    /* Slow-thermo / Between / Lockout / Sequence lines. */
+    drawSlowThermos();
+    drawBetweenLikeLines();
+
+    /* Play-mode overlays: cell background colors + center/corner
+       pencilmarks — only meaningful in the Play tool. */
+    drawPlayOverlays();
 
     /* Pencilmark analysis overlay (only when pencilmarkOn). */
     drawPencilmarks();
@@ -2235,6 +2585,283 @@ window.SudokuApp = (function () {
     grid.appendChild(svg);
   }
 
+  /* Extra region overlay: for each region, tint every cell in that region
+     via a per-cell CSS variable + inset dashed outline (like a cage but
+     without a sum). Multiple regions may share cells — later regions
+     replace earlier tints on shared cells; the outlines still show the
+     boundary of each separately. */
+  function drawExtraRegions() {
+    const { N } = state.puzzle;
+    const list = state.puzzle.extraRegions || [];
+    const size = state.dom.cellSize;
+    const total = N * size;
+    const grid = state.dom.grid;
+    grid.querySelectorAll('.er-svg').forEach(n => n.remove());
+    /* Reset per-cell tint. */
+    state.dom.cells.forEach(c => {
+      c.style.removeProperty('--extra-region-bg');
+      c.classList.remove('extra-region-tinted');
+    });
+    /* Apply tint (last-wins so hovering the most-recent region reads clearly). */
+    list.forEach(er => {
+      const color = extraRegionColor(er.color | 0);
+      for (const i of er.cells) {
+        const cell = state.dom.cells[i]; if (!cell) continue;
+        cell.style.setProperty('--extra-region-bg', color);
+        cell.classList.add('extra-region-tinted');
+      }
+    });
+    /* Draft (current tool) also tints for visual feedback. */
+    if (state.tool === 'extraRegion' && state.erDraft.cells.length) {
+      const color = extraRegionColor(state.erColor | 0);
+      for (const i of state.erDraft.cells) {
+        const cell = state.dom.cells[i]; if (!cell) continue;
+        cell.style.setProperty('--extra-region-bg', color);
+        cell.classList.add('extra-region-tinted');
+      }
+    }
+    /* SVG outlines for both saved regions and the draft. */
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('class', 'er-svg');
+    svg.setAttribute('width', total);
+    svg.setAttribute('height', total);
+    svg.setAttribute('viewBox', `0 0 ${total} ${total}`);
+    list.forEach(er => {
+      addCageOutline(svg, er.cells, size, 'extra-region');
+    });
+    if (state.tool === 'extraRegion' && state.erDraft.cells.length) {
+      addCageOutline(svg, state.erDraft.cells, size, 'extra-region draft');
+    }
+    grid.appendChild(svg);
+  }
+
+  /* Count-circle overlay: draw an outlined circle inside each marked cell. */
+  function drawCountCircles() {
+    const N = state.puzzle.N;
+    const cc = state.puzzle.countCircles;
+    const size = state.dom.cellSize;
+    const total = N * size;
+    const grid = state.dom.grid;
+    grid.querySelectorAll('.cc-svg').forEach(n => n.remove());
+    if (!cc) return;
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('class', 'cc-svg');
+    svg.setAttribute('width', total);
+    svg.setAttribute('height', total);
+    svg.setAttribute('viewBox', `0 0 ${total} ${total}`);
+    for (let i = 0; i < cc.length; i++) {
+      if (!cc[i]) continue;
+      const r = (i / N) | 0, c = i % N;
+      const cx = c * size + size / 2, cy = r * size + size / 2;
+      const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+      circle.setAttribute('class', 'cc-ring');
+      circle.setAttribute('cx', cx);
+      circle.setAttribute('cy', cy);
+      circle.setAttribute('r', size * 0.36);
+      svg.appendChild(circle);
+    }
+    grid.appendChild(svg);
+  }
+
+  /* Slow-thermo overlay — same shape as thermometer but with a distinct
+     stroke color so users can tell them apart. */
+  function drawSlowThermos() {
+    const { N, slowThermos } = state.puzzle;
+    const size = state.dom.cellSize;
+    const total = N * size;
+    const grid = state.dom.grid;
+    grid.querySelectorAll('.slow-svg').forEach(n => n.remove());
+    const list = slowThermos || [];
+    if (!list.length && state.tool !== 'slowThermo') return;
+
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('class', 'slow-svg');
+    svg.setAttribute('width', total);
+    svg.setAttribute('height', total);
+    svg.setAttribute('viewBox', `0 0 ${total} ${total}`);
+
+    const drawOne = (path, active) => {
+      if (!path.length) return;
+      const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+      g.setAttribute('class', 'slow-group' + (active ? ' active' : ''));
+      const centers = path.map(i => {
+        const r = (i / N) | 0, c = i % N;
+        return [c * size + size / 2, r * size + size / 2];
+      });
+      const bulb = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+      bulb.setAttribute('class', 'bulb');
+      bulb.setAttribute('cx', centers[0][0]);
+      bulb.setAttribute('cy', centers[0][1]);
+      bulb.setAttribute('r', size * 0.34);
+      g.appendChild(bulb);
+      if (centers.length > 1) {
+        const pts = centers.map(p => `${p[0]},${p[1]}`).join(' ');
+        const line = document.createElementNS('http://www.w3.org/2000/svg', 'polyline');
+        line.setAttribute('class', 'stem');
+        line.setAttribute('points', pts);
+        line.setAttribute('stroke-width', size * 0.22);
+        line.setAttribute('stroke-linecap', 'round');
+        line.setAttribute('stroke-linejoin', 'round');
+        g.appendChild(line);
+      }
+      svg.appendChild(g);
+    };
+    list.forEach(t => drawOne(t, false));
+    if (state.tool === 'slowThermo') drawOne(state.lineDraft.cells, true);
+    grid.appendChild(svg);
+  }
+
+  /* Between / lockout / sequence lines. Sequence just draws a plain line;
+     between/lockout draw a line with special end markers (open circle for
+     between, diamond for lockout). */
+  function drawBetweenLikeLines() {
+    const { N, betweenLines, lockoutLines, sequenceLines } = state.puzzle;
+    const size = state.dom.cellSize;
+    const total = N * size;
+    const grid = state.dom.grid;
+    grid.querySelectorAll('.blk-svg').forEach(n => n.remove());
+    const bs = betweenLines || [];
+    const ls = lockoutLines || [];
+    const ss = sequenceLines || [];
+    if (!bs.length && !ls.length && !ss.length &&
+        !['between', 'lockout', 'sequence'].includes(state.tool)) return;
+
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('class', 'blk-svg');
+    svg.setAttribute('width', total);
+    svg.setAttribute('height', total);
+    svg.setAttribute('viewBox', `0 0 ${total} ${total}`);
+
+    const centerOf = i => {
+      const r = (i / N) | 0, c = i % N;
+      return [c * size + size / 2, r * size + size / 2];
+    };
+    const drawLine = (path, cls, active) => {
+      if (path.length < 1) return;
+      const pts = path.map(centerOf);
+      const pline = document.createElementNS('http://www.w3.org/2000/svg', 'polyline');
+      pline.setAttribute('class', 'blk-line ' + cls + (active ? ' active' : ''));
+      pline.setAttribute('points', pts.map(p => p.join(',')).join(' '));
+      pline.setAttribute('stroke-width', size * 0.14);
+      pline.setAttribute('stroke-linecap', 'round');
+      pline.setAttribute('stroke-linejoin', 'round');
+      svg.appendChild(pline);
+      if (cls === 'between' || cls === 'lockout') {
+        /* Endpoint markers: circle for between, diamond for lockout. */
+        const first = pts[0], last = pts[pts.length - 1];
+        for (const p of [first, last]) {
+          if (cls === 'between') {
+            const c = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+            c.setAttribute('class', 'blk-cap between');
+            c.setAttribute('cx', p[0]);
+            c.setAttribute('cy', p[1]);
+            c.setAttribute('r', size * 0.30);
+            svg.appendChild(c);
+          } else {
+            const d = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+            d.setAttribute('class', 'blk-cap lockout');
+            const R = size * 0.28;
+            d.setAttribute('points',
+              `${p[0]},${p[1]-R} ${p[0]+R},${p[1]} ${p[0]},${p[1]+R} ${p[0]-R},${p[1]}`);
+            svg.appendChild(d);
+          }
+        }
+      }
+    };
+
+    bs.forEach(l => drawLine(l, 'between', false));
+    ls.forEach(l => drawLine(l, 'lockout', false));
+    ss.forEach(l => drawLine(l, 'sequence', false));
+    /* Preview for in-progress draft. */
+    if (state.tool === 'between')  drawLine(state.lineDraft.cells, 'between',  true);
+    if (state.tool === 'lockout')  drawLine(state.lineDraft.cells, 'lockout',  true);
+    if (state.tool === 'sequence') drawLine(state.lineDraft.cells, 'sequence', true);
+
+    grid.appendChild(svg);
+  }
+
+  /* Play mode overlays: cell background colors + center/corner pencilmarks.
+     Values (non-given) go into the cell input directly via renderPlayValues. */
+  function drawPlayOverlays() {
+    const N = state.puzzle.N;
+    const size = state.dom.cellSize;
+    const total = N * size;
+    const grid = state.dom.grid;
+    grid.querySelectorAll('.play-svg').forEach(n => n.remove());
+    /* Clear per-cell play tint each render. */
+    state.dom.cells.forEach(c => {
+      c.classList.remove('play-tinted');
+      c.style.removeProperty('--play-bg');
+    });
+    if (!state.play.values) return;
+    const inPlay = state.tool === 'play';
+    /* Colors are shown whenever the user has painted them (setter can see
+       them too so switching tools doesn't hide progress). */
+    for (let i = 0; i < N * N; i++) {
+      const co = state.play.colors[i];
+      if (!co) continue;
+      const cell = state.dom.cells[i]; if (!cell) continue;
+      cell.style.setProperty('--play-bg', PLAY_COLORS[(co - 1) % PLAY_COLORS.length]);
+      cell.classList.add('play-tinted');
+    }
+    if (!inPlay) return;
+    /* SVG for pencilmarks. */
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('class', 'play-svg');
+    svg.setAttribute('width', total);
+    svg.setAttribute('height', total);
+    svg.setAttribute('viewBox', `0 0 ${total} ${total}`);
+    const rowsForN = Math.ceil(Math.sqrt(N));
+    const colsForN = Math.ceil(N / rowsForN);
+    for (let i = 0; i < N * N; i++) {
+      const r = (i / N) | 0, c = i % N;
+      const given = state.puzzle.given[i];
+      const playV = state.play.values[i];
+      if (given || playV) continue;   /* solid digit already shown */
+      const cM = state.play.center[i];
+      const cM2 = state.play.corner[i];
+      /* Center pencilmarks: horizontal digit list at cell centre. */
+      if (cM) {
+        const digits = [];
+        for (let v = 1; v <= N; v++) if (cM & (1 << (v - 1))) digits.push(v);
+        if (digits.length) {
+          const t = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+          t.setAttribute('class', 'play-center');
+          t.setAttribute('x', c * size + size / 2);
+          t.setAttribute('y', r * size + size / 2);
+          t.setAttribute('text-anchor', 'middle');
+          t.setAttribute('dominant-baseline', 'central');
+          const fs = Math.max(7, size * (digits.length > 4 ? 0.16 : 0.22));
+          t.setAttribute('font-size', fs);
+          t.textContent = digits.map(digitToChar).join('');
+          svg.appendChild(t);
+        }
+      }
+      /* Corner pencilmarks: up to 4 digits in the corners. */
+      if (cM2) {
+        const digits = [];
+        for (let v = 1; v <= N; v++) if (cM2 & (1 << (v - 1))) digits.push(v);
+        const slots = [
+          [0.18, 0.22], [0.82, 0.22], [0.18, 0.78], [0.82, 0.78],
+          [0.5, 0.22],  [0.5, 0.78],  [0.18, 0.5],  [0.82, 0.5],
+        ];
+        digits.slice(0, slots.length).forEach((v, k) => {
+          const [fx, fy] = slots[k];
+          const t = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+          t.setAttribute('class', 'play-corner');
+          t.setAttribute('x', c * size + fx * size);
+          t.setAttribute('y', r * size + fy * size);
+          t.setAttribute('text-anchor', 'middle');
+          t.setAttribute('dominant-baseline', 'central');
+          t.setAttribute('font-size', Math.max(7, size * 0.18));
+          t.textContent = digitToChar(v);
+          svg.appendChild(t);
+        });
+      }
+    }
+    grid.appendChild(svg);
+  }
+
   /* Pencilmark overlay: only rendered when state.pencilmarkOn is true and
      stats have been computed. */
   function drawPencilmarks() {
@@ -2312,6 +2939,7 @@ window.SudokuApp = (function () {
       if (state.tool === 'region') { e.preventDefault(); state.regionDrag = true; paintRegionLight(i); }
       else if (state.tool === 'rainbow') { e.preventDefault(); state.rainbowDrag = true; paintRainbowLight(i); }
       else if (state.tool === 'cage') { e.preventDefault(); beginCageDrag(i); }
+      else if (state.tool === 'extraRegion') { e.preventDefault(); beginERDrag(i); }
       else if (state.tool === 'thermo') { e.preventDefault(); state.pathDrag = true; addThermoCellLight(i); }
       else if (LINE_TOOLS.has(state.tool)) {
         e.preventDefault(); state.pathDrag = true; addLineCellLight(i);
@@ -2325,9 +2953,12 @@ window.SudokuApp = (function () {
       else if (state.tool === 'colIndex') { e.preventDefault(); state.colIndexDrag = true; paintIndexLight(i, 'colIndex'); }
       else if (state.tool === 'rowIndex') { e.preventDefault(); state.rowIndexDrag = true; paintIndexLight(i, 'rowIndex'); }
       else if (state.tool === 'hitpoint') { e.preventDefault(); handleHitpointClick(i); }
+      else if (state.tool === 'countCircle') { e.preventDefault(); state.ccDrag = null; paintCountCircleLight(i); }
+      else if (state.tool === 'play') { /* focus stays for keyboard entry */ handlePlayCellClick(i, e); }
     });
     input.addEventListener('mouseenter', () => {
       if (state.tool === 'cage' && state.cageDrag) applyCageDrag(i);
+      else if (state.tool === 'extraRegion' && state.erDrag) applyERDrag(i);
       else if (state.tool === 'region' && state.regionDrag) paintRegionLight(i);
       else if (state.tool === 'rainbow' && state.rainbowDrag) paintRainbowLight(i);
       else if (state.tool === 'thermo' && state.pathDrag) addThermoCellLight(i);
@@ -2336,6 +2967,8 @@ window.SudokuApp = (function () {
       else if (state.tool === 'parity' && state.parityDrag) paintParityLight(i);
       else if (state.tool === 'colIndex' && state.colIndexDrag) paintIndexLight(i, 'colIndex');
       else if (state.tool === 'rowIndex' && state.rowIndexDrag) paintIndexLight(i, 'rowIndex');
+      else if (state.tool === 'countCircle' && state.ccDrag != null) paintCountCircleLight(i);
+      else if (state.tool === 'play' && state.play.activeMode === 'color' && state.playColorDrag) paintPlayColorLight(i);
     });
 
     input.addEventListener('keydown', e => {
@@ -2345,6 +2978,39 @@ window.SudokuApp = (function () {
       if (e.key === 'ArrowLeft'  && idx % N > 0)     { e.preventDefault(); state.dom.cells[idx - 1].focus(); return; }
       if (e.key === 'ArrowDown'  && idx < N * (N - 1)) { e.preventDefault(); state.dom.cells[idx + N].focus(); return; }
       if (e.key === 'ArrowUp'    && idx >= N)         { e.preventDefault(); state.dom.cells[idx - N].focus(); return; }
+      if (state.tool === 'play') {
+        /* Play-mode key routing. Given cells are locked. Backspace clears
+           value + both pencilmark layers on the focused cell. */
+        if (state.puzzle.given[idx]) { e.preventDefault(); return; }
+        ensurePlayState();
+        if (e.key === 'Backspace' || e.key === 'Delete') {
+          e.preventDefault();
+          state.play.values[idx] = 0;
+          state.play.center[idx] = 0;
+          state.play.corner[idx] = 0;
+          input.value = '';
+          analyze();
+          return;
+        }
+        if (isDigitKey(e.key, N)) {
+          e.preventDefault();
+          const v = charToDigit(e.key);
+          const mb = 1 << (v - 1);
+          if (e.shiftKey || state.play.activeMode === 'center') {
+            state.play.center[idx] ^= mb;
+          } else if (e.ctrlKey || e.metaKey || state.play.activeMode === 'corner') {
+            state.play.corner[idx] ^= mb;
+          } else {
+            state.play.values[idx] = state.play.values[idx] === v ? 0 : v;
+            input.value = state.play.values[idx] ? digitToChar(v) : '';
+          }
+          analyze();
+          return;
+        }
+        if (e.key === 'Tab' || e.key === 'Enter') return;
+        e.preventDefault();
+        return;
+      }
       if (state.tool !== 'digit') { e.preventDefault(); return; }
       if (e.key === 'Backspace' || e.key === 'Delete') {
         e.preventDefault();
@@ -2373,6 +3039,10 @@ window.SudokuApp = (function () {
       const N = state.puzzle.N;
       const raw = e.target.value.toUpperCase();
       const v = charToDigit(raw);
+      /* Play mode: input events are ignored — Play keydown already handled the
+         write into state.play, and we don't want the input's own value change
+         to leak into the setter-side given/values arrays. */
+      if (state.tool === 'play') return;
       if (v >= 1 && v <= N) {
         state.puzzle.values[i] = v;
         state.puzzle.given[i] = 1;
@@ -2397,6 +3067,10 @@ window.SudokuApp = (function () {
      four orthogonal neighbours (borders depend on both sides). */
   function paintRegionLight(i) {
     const p = state.puzzle;
+    /* Custom regions and disjoint groups are mutually exclusive — see
+       buildFlagRow. Auto-disable disjoint when the user starts painting a
+       custom region (a quiet mutex rather than a modal). */
+    if (p.flags && p.flags.disjoint) p.flags.disjoint = false;
     if (p.regions[i] === state.regionPick) return;
     p.regions[i] = state.regionPick;
     const N = p.N;
@@ -2696,11 +3370,42 @@ window.SudokuApp = (function () {
     /* Clear placeholders + errors. */
     state.dom.cells.forEach(c => { c.classList.remove('error'); c.placeholder = ''; c.classList.remove('hint-only'); });
 
-    const conflicts = Core.findConflicts(state.puzzle);
+    /* In Play mode we conflict-check the combined given + player-entered grid
+       so the player sees mistakes live. The setter-side puzzle is unchanged. */
+    const inPlay = state.tool === 'play' && state.play.values;
+    let checkPuzzle = state.puzzle;
+    if (inPlay) {
+      const N = state.puzzle.N;
+      const overlay = new Uint8Array(N * N);
+      for (let i = 0; i < N * N; i++) {
+        overlay[i] = state.puzzle.given[i] ? state.puzzle.values[i] : state.play.values[i] || 0;
+      }
+      /* Cheap shallow proxy: copy the fields the plugin scans need to read;
+         values swap for the overlay so conflicts reflect actual play state. */
+      checkPuzzle = Object.assign({}, state.puzzle, { values: overlay });
+    }
+    const conflicts = Core.findConflicts(checkPuzzle);
     if (conflicts.size > 0) {
       conflicts.forEach(i => state.dom.cells[i].classList.add('error'));
       setStatus(L({ en: `Conflict: ${conflicts.size} cells clash.`,
                     zh: `冲突：${conflicts.size} 个单元格重复。` }), 'err');
+      updateNav();
+      return;
+    }
+    /* In Play mode: if every cell is filled and there are no conflicts, the
+       puzzle is solved. */
+    if (inPlay) {
+      const total = state.puzzle.N * state.puzzle.N;
+      let filled = 0;
+      for (let i = 0; i < total; i++) {
+        if (state.puzzle.given[i] || state.play.values[i]) filled++;
+      }
+      if (filled === total) {
+        setStatus(L({ en: 'Solved. ✓', zh: '完成 ✓' }), 'ok');
+      } else {
+        setStatus(L({ en: `Playing: ${filled}/${total} cells filled.`,
+                      zh: `游玩中：已填 ${filled}/${total} 格。` }));
+      }
       updateNav();
       return;
     }
@@ -2737,9 +3442,16 @@ window.SudokuApp = (function () {
       (p.colIndex && Array.prototype.some.call(p.colIndex, v => !!v)) ||
       (p.rowIndex && Array.prototype.some.call(p.rowIndex, v => !!v)) ||
       (p.hitpoints && p.hitpoints.length) ||
-      p.flags.diagonal || p.flags.antiKnight || p.flags.antiKing || p.flags.antiConsecutive ||
+      (p.extraRegions && p.extraRegions.length) ||
+      (p.slowThermos && p.slowThermos.length) ||
+      (p.betweenLines && p.betweenLines.length) ||
+      (p.lockoutLines && p.lockoutLines.length) ||
+      (p.sequenceLines && p.sequenceLines.length) ||
+      (p.countCircles && Array.prototype.some.call(p.countCircles, v => !!v)) ||
+      p.flags.diagonal || p.flags.antiKnight || p.flags.antiKing || p.flags.antiConsecutive || p.flags.disjoint ||
       hasCustomRegions() ||
-      anyEdge(p.sky) || anyEdge(p.sandwich);
+      anyEdge(p.sky) || anyEdge(p.sandwich) ||
+      (p.xsum && anyEdge(p.xsum));
     if (!hasGivens && !hasVariant) {
       setStatus(L({ en: 'Add a given digit or a constraint to solve.',
                     zh: '请输入至少一个已知数字或添加一个约束。' }));
@@ -2959,6 +3671,9 @@ window.SudokuApp = (function () {
       if (state.parityDrag) { state.parityDrag = false; analyze(); }
       if (state.colIndexDrag) { state.colIndexDrag = false; state.__colIndexPaint = null; analyze(); }
       if (state.rowIndexDrag) { state.rowIndexDrag = false; state.__rowIndexPaint = null; analyze(); }
+      if (state.erDrag) endERDrag();
+      if (state.ccDrag != null) { state.ccDrag = null; analyze(); }
+      if (state.playColorDrag) { state.playColorDrag = false; state.__playColorMode = null; }
     };
     document.addEventListener('mouseup', endAll);
     document.addEventListener('mouseleave', endAll);
