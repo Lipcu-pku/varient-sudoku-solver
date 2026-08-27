@@ -103,8 +103,9 @@ self.SudokuCore = (function () {
 
   function newPuzzle(N, boxR, boxC, opts) {
     /* Legacy signature newPuzzle(N, boxR, boxC) → square N×N with digits N.
-       New signature newPuzzle(N, boxR, boxC, {rows, cols, digits, deleted})
-       → any rectangular bounding box, optionally with deleted cells. */
+       New signature newPuzzle(N, boxR, boxC, {rows, cols, digits, deleted,
+       regionCount}) → any rectangular bounding box, optionally with deleted
+       cells and an explicit region-count. */
     opts = opts || {};
     const rows   = opts.rows   != null ? opts.rows   : N;
     const cols   = opts.cols   != null ? opts.cols   : N;
@@ -116,6 +117,30 @@ self.SudokuCore = (function () {
       const len = Math.min(src.length, total);
       for (let i = 0; i < len; i++) deleted[i] = src[i] ? 1 : 0;
     }
+    /* Default regions only apply when the grid is a classic square that
+       tiles cleanly by boxR × boxC boxes AND has no deleted cells. On any
+       other shape the region layout must be user-painted, so we leave
+       every cell unassigned (-1). */
+    const anyDeletion = anyHole(deleted);
+    const canDefaultBoxes = rows === cols && rows === digits
+      && boxR && boxC && rows % boxR === 0 && cols % boxC === 0
+      && !anyDeletion;
+    let regionsArr;
+    if (canDefaultBoxes) {
+      regionsArr = rectRegions(rows, cols, boxR, boxC);
+    } else {
+      regionsArr = new Int8Array(total);
+      for (let i = 0; i < total; i++) regionsArr[i] = -1;
+    }
+    /* Region count: how many distinct regions the puzzle is divided into.
+       Defaults to the number of existing cells / digits (integer division)
+       for irregular shapes, or `digits` for classic. Users may override. */
+    let existing = 0;
+    for (let i = 0; i < total; i++) if (!deleted[i]) existing++;
+    let regionCount;
+    if (opts.regionCount != null) regionCount = opts.regionCount | 0;
+    else if (canDefaultBoxes)     regionCount = digits;
+    else                          regionCount = Math.max(0, Math.floor(existing / digits));
     const p = {
       /* `N` remains the canonical digit-count so all plugin code that reads
          `ctx.N` / `p.N` keeps working unchanged. On classic square puzzles
@@ -125,9 +150,10 @@ self.SudokuCore = (function () {
       rows, cols,
       boxR, boxC,
       deleted,
+      regionCount,
       values:  new Uint8Array(total),
       given:   new Uint8Array(total),
-      regions: rectRegions(rows, cols, boxR, boxC),
+      regions: regionsArr,
       cages:   [],
       thermos: [],
       whispers:   [],
@@ -496,7 +522,7 @@ self.SudokuCore = (function () {
      cell must have a valid region and each region must hold exactly
      `digits` cells. */
   function regionsValid(regionsOrP, N) {
-    let regions, digits, total, deleted;
+    let regions, digits, total, deleted, expectedCount;
     if (regionsOrP && regionsOrP.regions) {
       const p = regionsOrP;
       regions = p.regions;
@@ -505,11 +531,13 @@ self.SudokuCore = (function () {
       const nCols = p.cols != null ? p.cols : p.N;
       total   = nRows * nCols;
       deleted = p.deleted || new Uint8Array(total);
+      expectedCount = p.regionCount != null ? p.regionCount : null;
     } else {
       regions = regionsOrP;
       digits  = N;
       total   = N * N;
       deleted = new Uint8Array(total);
+      expectedCount = null;
     }
     const counts = new Map();
     for (let i = 0; i < total; i++) {
@@ -519,6 +547,7 @@ self.SudokuCore = (function () {
       counts.set(r, (counts.get(r) || 0) + 1);
     }
     for (const [, c] of counts) if (c !== digits) return false;
+    if (expectedCount != null && counts.size !== expectedCount) return false;
     return true;
   }
 
@@ -1172,6 +1201,8 @@ self.SudokuCore = (function () {
     if (nRows !== p.N) out.rows = nRows;
     if (nCols !== p.N) out.cols = nCols;
     if (digits !== defaultDigits(nRows, nCols)) out.digits = digits;
+    /* Emit region count only when it deviates from the digit-count default. */
+    if (p.regionCount != null && p.regionCount !== digits) out.regionCount = p.regionCount;
     if (p.deleted) {
       const del = [];
       for (let i = 0; i < p.deleted.length; i++) if (p.deleted[i]) del.push(i);
@@ -1226,7 +1257,10 @@ self.SudokuCore = (function () {
     const total  = rows * cols;
     const deletedArr = new Uint8Array(total);
     if (Array.isArray(j.deleted)) for (const i of j.deleted) if (i >= 0 && i < total) deletedArr[i] = 1;
-    const p = newPuzzle(digits, j.boxR, j.boxC, { rows, cols, digits, deleted: deletedArr });
+    const p = newPuzzle(digits, j.boxR, j.boxC, {
+      rows, cols, digits, deleted: deletedArr,
+      regionCount: j.regionCount != null ? j.regionCount : undefined,
+    });
     if (j.values && j.values.length === total) p.values.set(j.values);
     if (j.given  && j.given.length  === total) p.given.set(j.given);
     if (j.regions && j.regions.length === total) p.regions = Int8Array.from(j.regions);

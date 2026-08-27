@@ -575,6 +575,9 @@ window.SudokuApp = (function () {
     const nRows = pz.rows != null ? pz.rows : pz.N;
     const nCols = pz.cols != null ? pz.cols : pz.N;
     const digits = pz.digits != null ? pz.digits : pz.N;
+    const existing = countExistingCells(pz);
+    const defaultRegionCount = digits ? Math.floor(existing / digits) : 0;
+    const regionCount = pz.regionCount != null ? pz.regionCount : defaultRegionCount;
     /* Inputs are read on Apply — editing them doesn't rebuild until then,
        so the user can iterate without losing state. */
     const rowsInp = el('input');
@@ -586,38 +589,62 @@ window.SudokuApp = (function () {
     const digitsInp = el('input');
     digitsInp.type = 'number'; digitsInp.min = 2; digitsInp.max = 16; digitsInp.value = digits;
     digitsInp.style.width = '4rem';
+    const regionsInp = el('input');
+    regionsInp.type = 'number'; regionsInp.min = 1; regionsInp.max = 32; regionsInp.value = regionCount;
+    regionsInp.style.width = '4rem';
     p.append(
       el('span', null, L({ en: 'Rows', zh: '行' }) + ':'), rowsInp,
       el('span', null, '× ' + L({ en: 'Cols', zh: '列' }) + ':'), colsInp,
       el('span', null, ' · ' + L({ en: 'Digits', zh: '数字' }) + ':'), digitsInp,
+      el('span', null, ' · ' + L({ en: 'Regions', zh: '宫格数' }) + ':'), regionsInp,
     );
     p.appendChild(btn({ en: 'Apply', zh: '应用' }, {
       onClick: () => {
-        const R = Number(rowsInp.value) | 0;
-        const C = Number(colsInp.value) | 0;
-        const D = Number(digitsInp.value) | 0;
-        if (R < 2 || R > 16 || C < 2 || C > 16 || D < 2 || D > 16) return;
-        applyGridShape(R, C, D);
+        const R  = Number(rowsInp.value) | 0;
+        const C  = Number(colsInp.value) | 0;
+        const D  = Number(digitsInp.value) | 0;
+        const RG = Number(regionsInp.value) | 0;
+        if (R < 2 || R > 16 || C < 2 || C > 16 || D < 2 || D > 16 || RG < 1) return;
+        applyGridShape(R, C, D, RG);
       },
     }));
     p.appendChild(btn({ en: 'Reset shape', zh: '重置形状' }, {
       secondary: true,
       onClick: () => {
         const N = pz.N;
-        applyGridShape(N, N, N);
+        applyGridShape(N, N, N, N);
       },
     }));
     const del = (pz.deleted && Array.prototype.filter.call(pz.deleted, x => x).length) || 0;
-    p.appendChild(el('span', 'hint', L({
-      en: `Deleted cells: ${del}. Click a cell to toggle.`,
-      zh: `已删除格子：${del}。点击格子可切换删除状态。`,
-    })));
+    /* Feasibility check — regions × digits must equal existing cells for
+       a valid puzzle. Warn the user directly on the panel so they don't
+       have to run the solver to discover the mismatch. */
+    const feasible = (regionCount * digits) === existing;
+    const hint = el('span', 'hint');
+    hint.textContent = L({
+      en: `Deleted: ${del} · Existing: ${existing} · Regions × Digits = ${regionCount * digits}${feasible ? ' ✓' : ` (should equal ${existing})`}`,
+      zh: `已删除：${del} · 现有：${existing} · 宫格数 × 数字数 = ${regionCount * digits}${feasible ? ' ✓' : `（应等于 ${existing}）`}`,
+    });
+    if (!feasible) hint.style.color = 'var(--danger, #dc2626)';
+    hint.style.flex = '1 1 100%';
+    hint.style.textAlign = 'center';
+    p.appendChild(hint);
   }
 
-  /* Apply new rows/cols/digits, preserving as much of the current puzzle
-     as fits. Deleted cells stay deleted when shape only shrinks in a
-     dimension the deleted cell falls outside of. */
-  function applyGridShape(rows, cols, digits) {
+  function countExistingCells(pz) {
+    const nRows = pz.rows != null ? pz.rows : pz.N;
+    const nCols = pz.cols != null ? pz.cols : pz.N;
+    const total = nRows * nCols;
+    if (!pz.deleted) return total;
+    let n = 0;
+    for (let i = 0; i < total; i++) if (!pz.deleted[i]) n++;
+    return n;
+  }
+
+  /* Apply new rows/cols/digits/regionCount, preserving as much of the
+     current puzzle as fits. Deleted cells stay deleted when the shape
+     only shrinks in a dimension the deleted cell falls outside of. */
+  function applyGridShape(rows, cols, digits, regionCount) {
     const oldP = state.puzzle;
     const oldRows = oldP.rows != null ? oldP.rows : oldP.N;
     const oldCols = oldP.cols != null ? oldP.cols : oldP.N;
@@ -631,7 +658,10 @@ window.SudokuApp = (function () {
         }
       }
     }
-    state.puzzle = Core.newPuzzle(digits, boxR, boxC, { rows, cols, digits, deleted: carry });
+    state.puzzle = Core.newPuzzle(digits, boxR, boxC, {
+      rows, cols, digits, deleted: carry,
+      regionCount: regionCount != null ? regionCount : undefined,
+    });
     /* Clear all drafts. */
     state.cageDraft = { cells: [], sum: '' };
     state.thermoDraft = { cells: [] };
@@ -1284,12 +1314,20 @@ window.SudokuApp = (function () {
   }
 
   function fillRegionPanel(p) {
-    const N = state.puzzle.N;
+    const pz = state.puzzle;
+    const N = pz.N;
+    const nRows = pz.rows != null ? pz.rows : N;
+    const nCols = pz.cols != null ? pz.cols : N;
+    const digits = pz.digits != null ? pz.digits : N;
+    const existing = countExistingCells(pz);
+    const regionCount = pz.regionCount != null ? pz.regionCount
+      : (digits ? Math.floor(existing / digits) : N);
     const label = el('span', null, L(T.regLbl) + ':');
     p.appendChild(label);
     const theme = AppTheme.get();
-    /* Region chips 0..N-1, plus rebalance + reset-to-boxes buttons. */
-    for (let r = 0; r < N; r++) {
+    /* One chip per region — count driven by p.regionCount, not p.N, so
+       irregular puzzles with a different number of regions render correctly. */
+    for (let r = 0; r < regionCount; r++) {
       const chip = el('button', 'chip');
       const sw = el('span', 'swatch'); sw.style.background = regionColor(r, theme);
       chip.appendChild(sw);
@@ -1301,14 +1339,58 @@ window.SudokuApp = (function () {
       });
       p.appendChild(chip);
     }
-    const boxes = btn({ en: 'Reset to boxes', zh: '恢复为矩形宫' }, {
+    /* Reset-to-boxes only applies to classic square grids where the
+       rectangular box tiling is well-defined. */
+    const isClassic = nRows === nCols && nRows === digits &&
+      pz.boxR && pz.boxC && nRows % pz.boxR === 0 && nCols % pz.boxC === 0 &&
+      !anyDeleted(pz);
+    if (isClassic) {
+      p.appendChild(btn({ en: 'Reset to boxes', zh: '恢复为矩形宫' }, {
+        secondary: true,
+        onClick: () => {
+          state.puzzle.regions = Core.rectRegions(nRows, nCols, pz.boxR, pz.boxC);
+          rebuild();
+        },
+      }));
+    }
+    p.appendChild(btn({ en: 'Clear regions', zh: '清空宫格' }, {
       secondary: true,
       onClick: () => {
-        state.puzzle.regions = Core.rectRegions(N, state.puzzle.boxR, state.puzzle.boxC);
+        const total = nRows * nCols;
+        for (let i = 0; i < total; i++) {
+          state.puzzle.regions[i] = (pz.deleted && pz.deleted[i]) ? -1 : -1;
+        }
         rebuild();
       },
+    }));
+    /* Live feasibility line reused from Grid panel so users get feedback
+       while painting. */
+    const painted = new Map();
+    for (let i = 0; i < nRows * nCols; i++) {
+      if (pz.deleted && pz.deleted[i]) continue;
+      const rg = pz.regions[i];
+      if (rg < 0) continue;
+      painted.set(rg, (painted.get(rg) || 0) + 1);
+    }
+    const unassigned = existing - Array.from(painted.values()).reduce((a, b) => a + b, 0);
+    const parts = [];
+    for (const [k, v] of [...painted.entries()].sort((a, b) => a[0] - b[0])) {
+      parts.push(`${k + 1}:${v}${v === digits ? '✓' : ''}`);
+    }
+    const hint = el('span', 'hint');
+    hint.textContent = L({
+      en: `Regions filled: ${parts.join(' ')}${unassigned ? ` · ${unassigned} unassigned` : ''}`,
+      zh: `已上色：${parts.join(' ')}${unassigned ? ` · 未指派 ${unassigned}` : ''}`,
     });
-    p.appendChild(boxes);
+    hint.style.flex = '1 1 100%';
+    hint.style.textAlign = 'center';
+    p.appendChild(hint);
+  }
+
+  function anyDeleted(pz) {
+    if (!pz.deleted) return false;
+    for (let i = 0; i < pz.deleted.length; i++) if (pz.deleted[i]) return true;
+    return false;
   }
 
   function fillRainbowPanel(p) {
