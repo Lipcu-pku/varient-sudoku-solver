@@ -15,6 +15,11 @@
   /* Deleted-cell fill: white on dark, black on light — makes the hole
      visually distinct from an unassigned but existing cell. */
   --deleted-fill: #ffffff;
+  /* Solver hint (the "faded" solution digit shown as a placeholder on
+     empty cells) needs more contrast on the dark surface than plain
+     muted/45% opacity gives — the digits were unreadable at glance. */
+  --hint-color: #c8cfff;
+  --hint-opacity: 0.85;
 }
 
 :root[data-theme="light"] {
@@ -30,6 +35,10 @@
   --danger: #dc2626;
   --shadow: 0 1px 2px rgba(20, 25, 60, 0.08);
   --deleted-fill: #000000;
+  /* Light theme's default already looks OK — keep the values so both
+     themes read the same variable. */
+  --hint-color: #5b6289;
+  --hint-opacity: 0.55;
 }
 
 body {
@@ -250,9 +259,9 @@ section {
 .sudoku-cell.error { background-color: rgba(220, 38, 38, 0.18); color: var(--danger); }
 
 .sudoku-cell::placeholder {
-  color: var(--muted);
+  color: var(--hint-color, var(--muted));
   font-weight: 400;
-  opacity: 0.45;
+  opacity: var(--hint-opacity, 0.45);
   text-align: center;
 }
 
@@ -488,6 +497,13 @@ section {
 }
 .tool-panel .chip:hover { color: var(--text); border-color: var(--accent); }
 .tool-panel .chip.active { background: var(--accent); color: white; border-color: var(--accent); }
+/* Region-editor chips carry their fill status inline (e.g. "1(5/9)") —
+   green when the region is exactly `digits` full, red otherwise. The
+   `.active` state's white text takes precedence, so the color hint only
+   matters on non-selected chips. */
+.tool-panel .chip.region-chip.region-filled   { color: var(--success); }
+.tool-panel .chip.region-chip.region-unfilled { color: var(--danger); }
+.tool-panel .chip.region-chip.active          { color: white; }
 .tool-panel .swatch {
   width: 1rem; height: 1rem; border-radius: 3px;
   display: inline-block; vertical-align: middle;
@@ -765,7 +781,7 @@ section {
 .sudoku-frame .sandwich-cell.filled { color: var(--accent); font-weight: 700; }
 
 /* Placeholder rendered as the current auto-solved candidate. */
-.sudoku-cell.hint-only { color: var(--muted); font-weight: 400; }
+.sudoku-cell.hint-only { color: var(--hint-color, var(--muted)); font-weight: 400; }
 
 /* Toggle row for global rule flags */
 .flag-row {

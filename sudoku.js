@@ -1343,17 +1343,33 @@ window.SudokuApp = (function () {
     const existing = countExistingCells(pz);
     const regionCount = pz.regionCount != null ? pz.regionCount
       : (digits ? Math.floor(existing / digits) : N);
+    /* Count cells per region up front so each button can show its own
+       fill status. Regions that don't have any painted cells still get
+       a 0-count entry via the `for r < regionCount` loop below. */
+    const painted = new Map();
+    for (let i = 0; i < nRows * nCols; i++) {
+      if (pz.deleted && pz.deleted[i]) continue;
+      const rg = pz.regions[i];
+      if (rg < 0) continue;
+      painted.set(rg, (painted.get(rg) || 0) + 1);
+    }
     const label = el('span', null, L(T.regLbl) + ':');
     p.appendChild(label);
     const theme = AppTheme.get();
     /* One chip per region — count driven by p.regionCount, not p.N, so
-       irregular puzzles with a different number of regions render correctly. */
+       irregular puzzles with a different number of regions render correctly.
+       Each button carries its own fill status: green when filled to exactly
+       `digits` cells, red otherwise. */
     for (let r = 0; r < regionCount; r++) {
-      const chip = el('button', 'chip');
+      const chip = el('button', 'chip region-chip');
       const sw = el('span', 'swatch'); sw.style.background = regionColor(r, theme);
       chip.appendChild(sw);
-      chip.appendChild(document.createTextNode(String(r + 1)));
+      const count = painted.get(r) || 0;
+      const filled = count === digits;
+      chip.appendChild(document.createTextNode(`${r + 1}(${count}/${digits})`));
       chip.classList.toggle('active', r === state.regionPick);
+      chip.classList.toggle('region-filled', filled);
+      chip.classList.toggle('region-unfilled', !filled);
       chip.addEventListener('click', () => {
         state.regionPick = r;
         fillToolPanel();
@@ -1378,34 +1394,24 @@ window.SudokuApp = (function () {
       secondary: true,
       onClick: () => {
         const total = nRows * nCols;
-        for (let i = 0; i < total; i++) {
-          state.puzzle.regions[i] = (pz.deleted && pz.deleted[i]) ? -1 : -1;
-        }
+        for (let i = 0; i < total; i++) state.puzzle.regions[i] = -1;
         rebuild();
       },
     }));
-    /* Live feasibility line reused from Grid panel so users get feedback
-       while painting. */
-    const painted = new Map();
-    for (let i = 0; i < nRows * nCols; i++) {
-      if (pz.deleted && pz.deleted[i]) continue;
-      const rg = pz.regions[i];
-      if (rg < 0) continue;
-      painted.set(rg, (painted.get(rg) || 0) + 1);
-    }
+    /* Unassigned counter stays outside the chips per the requested split —
+       painted totals are shown per-chip, this line only surfaces the
+       cells still needing an assignment. */
     const unassigned = existing - Array.from(painted.values()).reduce((a, b) => a + b, 0);
-    const parts = [];
-    for (const [k, v] of [...painted.entries()].sort((a, b) => a[0] - b[0])) {
-      parts.push(`${k + 1}:${v}${v === digits ? '✓' : ''}`);
+    if (unassigned) {
+      const hint = el('span', 'hint');
+      hint.textContent = L({
+        en: `${unassigned} cell${unassigned === 1 ? '' : 's'} unassigned`,
+        zh: `${unassigned} 个未指派格子`,
+      });
+      hint.style.flex = '1 1 100%';
+      hint.style.textAlign = 'center';
+      p.appendChild(hint);
     }
-    const hint = el('span', 'hint');
-    hint.textContent = L({
-      en: `Regions filled: ${parts.join(' ')}${unassigned ? ` · ${unassigned} unassigned` : ''}`,
-      zh: `已上色：${parts.join(' ')}${unassigned ? ` · 未指派 ${unassigned}` : ''}`,
-    });
-    hint.style.flex = '1 1 100%';
-    hint.style.textAlign = 'center';
-    p.appendChild(hint);
   }
 
   function anyDeleted(pz) {
