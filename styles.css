@@ -279,10 +279,14 @@ section {
    unmistakable next to an unassigned-but-existing cell (which stays the
    surface color). Black on light theme, white on dark theme — the
    opposite of the page so the hole reads as "solid, not part of the
-   puzzle" regardless of where it sits. */
+   puzzle" regardless of where it sits. Deleted cells still accept the
+   bx-* border classes so they read as a single "hole region" — no
+   borders between connected deleted cells, region-style borders where
+   they meet a real region or an unassigned cell, and outer edges
+   where they meet the grid boundary. */
 .sudoku-cell.deleted {
   background: var(--deleted-fill) !important;
-  border: none !important;
+  border: 0 solid transparent;
   cursor: default;
 }
 /* In the Grid shape editor, all cells hover with a crosshair to invite

@@ -1861,19 +1861,54 @@ window.SudokuApp = (function () {
     grid.classList.toggle('region-mode', state.tool === 'region');
     grid.classList.toggle('grid-shape-mode', state.tool === 'grid');
 
+    /* Region-like identifier used for border comparisons. Deleted cells
+       collectively behave as one virtual region (DELETED_REGION), so
+       connected deleted cells share no border and any deleted-vs-normal
+       boundary reads exactly like a region-vs-region boundary. */
+    const DELETED_REGION = -99;
+    const OUTSIDE = -100;
+    const regionOf = (rr, cc) => {
+      if (rr < 0 || rr >= nRows || cc < 0 || cc >= nCols) return OUTSIDE;
+      const nk = rr * nCols + cc;
+      if (deleted && deleted[nk]) return DELETED_REGION;
+      return regions[nk];
+    };
+    /* Choose a border class for one side of cell `i`, given its own
+       "region id" and the neighbour's. Rules:
+         - vs OUTSIDE  → 3px on this side only (bx-*-outer)
+         - same id     → no border
+         - both < 0 & non-deleted (two unassigned interior cells) → no border
+         - otherwise   → 1.5px on this side (bx-*), paired with the neighbour
+       Deleted cells still get the outer 3px vs OUTSIDE and the shared
+       1.5px vs any real region / unassigned neighbour. */
+    const borderClass = (myReg, nReg, side) => {
+      if (nReg === OUTSIDE) return 'bx-' + side + '-outer';
+      if (myReg === nReg) return null;
+      if (myReg < 0 && nReg < 0 && myReg !== DELETED_REGION && nReg !== DELETED_REGION) return null;
+      return 'bx-' + side;
+    };
+
     for (let i = 0; i < total; i++) {
       const r = (i / nCols) | 0, c = i % nCols;
+      const myReg = (deleted && deleted[i]) ? DELETED_REGION : regions[i];
+      const addBorders = (elt) => {
+        const t  = borderClass(myReg, regionOf(r-1, c), 't'); if (t)  elt.classList.add(t);
+        const l  = borderClass(myReg, regionOf(r, c-1), 'l'); if (l)  elt.classList.add(l);
+        const b  = borderClass(myReg, regionOf(r+1, c), 'b'); if (b)  elt.classList.add(b);
+        const rr2 = borderClass(myReg, regionOf(r, c+1), 'r'); if (rr2) elt.classList.add(rr2);
+      };
       if (deleted && deleted[i]) {
         /* Deleted cell: a non-interactive spacer so the grid layout stays
-           square. Keep the entry in state.dom.cells as null so index maths
-           still lines up. */
+           square. state.dom.cells stays null at this index. Borders are
+           applied so a run of connected deleted cells reads as one solid
+           region, and the boundary against a live region reads like any
+           other region boundary. */
         const gap = el('div', 'sudoku-cell deleted');
         gap.dataset.idx = i;
-        /* Even a deleted cell needs a click handler when the user is in
-           the Grid tool, so they can un-delete it. */
         gap.addEventListener('mousedown', (e) => {
           if (state.tool === 'grid') { e.preventDefault(); toggleDeletedCell(i); }
         });
+        addBorders(gap);
         grid.appendChild(gap);
         state.dom.cells.push(null);
         continue;
@@ -1883,35 +1918,8 @@ window.SudokuApp = (function () {
       input.autocomplete = 'off';
       input.maxLength = 1;
       input.style.setProperty('--region-bg', regions[i] >= 0 ? regionColor(regions[i], theme) : 'transparent');
-      /* Thick borders on region boundaries (or grid edges). Neighbours are
-         "outside" if they don't exist or are deleted. */
-      const isOutside = (rr, cc) => {
-        if (rr < 0 || rr >= nRows || cc < 0 || cc >= nCols) return true;
-        if (deleted && deleted[rr * nCols + cc]) return true;
-        return false;
-      };
-      /* Border decision per side. The neighbour can be:
-           - out-of-grid / deleted (outside the shape)   → use bx-*-outer (3px)
-           - a different real region                     → use bx-*     (1.5px, pairs with the other side)
-           - the same region, or two unassigned cells    → no border
-         The outer perimeter is ALWAYS drawn — even for unassigned cells —
-         so the shape has a visible outline regardless of whether regions
-         have been painted yet. Two adjacent unassigned interior cells DO
-         NOT draw a border between them; only region-vs-region and any
-         shape-edge get a line. */
-      const chooseBorder = (rr, cc, side) => {
-        const outside = isOutside(rr, cc);
-        if (outside) return 'bx-' + side + '-outer';
-        const nr = regions[rr * nCols + cc];
-        if (regions[i] < 0 && nr < 0) return null;
-        if (regions[i] === nr) return null;
-        return 'bx-' + side;
-      };
       if (hasCustom) {
-        const t = chooseBorder(r-1, c, 't'); if (t) input.classList.add(t);
-        const l = chooseBorder(r, c-1, 'l'); if (l) input.classList.add(l);
-        const b = chooseBorder(r+1, c, 'b'); if (b) input.classList.add(b);
-        const rg = chooseBorder(r, c+1, 'r'); if (rg) input.classList.add(rg);
+        addBorders(input);
       } else {
         /* Internal box separators (1.5px on each side, meet at 3px). */
         if ((c + 1) % boxC === 0 && c !== nCols - 1) input.classList.add('bx-r');
@@ -3164,13 +3172,19 @@ window.SudokuApp = (function () {
       /* Match the border-decision from buildCells so incremental repaints
          stay in sync with the full-render logic. */
       const kReg = p.regions[k];
+      /* Same "deleted-cells are one region" semantics as buildCells. */
+      const DELETED_REGION = -99;
+      const OUTSIDE = -100;
+      const kMyReg = (p.deleted && p.deleted[k]) ? DELETED_REGION : p.regions[k];
       const chooseSide = (kr2, kc2, side) => {
-        const outside = (kr2 < 0 || kr2 >= nRows || kc2 < 0 || kc2 >= nCols)
-                        || (p.deleted && p.deleted[kr2 * nCols + kc2]);
-        if (outside) return 'bx-' + side + '-outer';
-        const nr = p.regions[kr2 * nCols + kc2];
-        if (kReg < 0 && nr < 0) return null;
-        if (kReg === nr) return null;
+        if (kr2 < 0 || kr2 >= nRows || kc2 < 0 || kc2 >= nCols) {
+          return 'bx-' + side + '-outer';
+        }
+        const nk = kr2 * nCols + kc2;
+        const nr = (p.deleted && p.deleted[nk]) ? DELETED_REGION : p.regions[nk];
+        if (nr === OUTSIDE) return 'bx-' + side + '-outer';
+        if (kMyReg === nr) return null;
+        if (kMyReg < 0 && nr < 0 && kMyReg !== DELETED_REGION && nr !== DELETED_REGION) return null;
         return 'bx-' + side;
       };
       if (jig) {
