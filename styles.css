@@ -223,13 +223,9 @@ section {
   border-radius: 0;
   width: fit-content;
   height: fit-content;
-  /* Outer grid line matches the internal box/region line: each internal
-     boundary contributes 1.5px from either side (=3px centered on the
-     shared edge), so the outer perimeter uses a 3px outline pulled 1.5px
-     inward so half sits inside the grid and half outside — the visible
-     line is 3px wide, centered exactly on the grid's outer edge. */
-  outline: 3px solid var(--muted);
-  outline-offset: -1.5px;
+  /* The outer perimeter is now drawn cell-by-cell via `.bx-*-outer`
+     classes, matching the 3px width of internal region boundaries and
+     tracing irregular shapes exactly. No container outline. */
 }
 
 .sudoku-cell {
@@ -265,13 +261,19 @@ section {
   text-align: center;
 }
 
-/* Box / region borders: 1.5px from each side of a shared edge combine into
-   a single 3px muted line centered on that edge. Matches the grid's outer
-   outline so all box/region separators read at exactly one width. */
+/* Interior region boundaries: 1.5px from each side of a shared edge
+   combine into a single 3px muted line centered on that edge. */
 .sudoku-cell.bx-r { border-right:  1.5px solid var(--muted); }
 .sudoku-cell.bx-b { border-bottom: 1.5px solid var(--muted); }
 .sudoku-cell.bx-l { border-left:   1.5px solid var(--muted); }
 .sudoku-cell.bx-t { border-top:    1.5px solid var(--muted); }
+/* Outer-shape edges (cell facing the outside of the grid or a deleted
+   neighbour): the "other side" can't contribute, so we draw the full
+   3px on this cell alone — visually matches the internal boundaries. */
+.sudoku-cell.bx-r-outer { border-right:  3px solid var(--muted); }
+.sudoku-cell.bx-b-outer { border-bottom: 3px solid var(--muted); }
+.sudoku-cell.bx-l-outer { border-left:   3px solid var(--muted); }
+.sudoku-cell.bx-t-outer { border-top:    3px solid var(--muted); }
 
 /* Deleted cells: filled with a strong theme-aware color so they're
    unmistakable next to an unassigned-but-existing cell (which stays the

@@ -1399,19 +1399,19 @@ window.SudokuApp = (function () {
       },
     }));
     /* Unassigned counter stays outside the chips per the requested split —
-       painted totals are shown per-chip, this line only surfaces the
-       cells still needing an assignment. */
+       painted totals are shown per-chip, this line surfaces the running
+       count of cells still needing an assignment. Kept visible even at 0
+       so the user can confirm the layout is complete. */
     const unassigned = existing - Array.from(painted.values()).reduce((a, b) => a + b, 0);
-    if (unassigned) {
-      const hint = el('span', 'hint');
-      hint.textContent = L({
-        en: `${unassigned} cell${unassigned === 1 ? '' : 's'} unassigned`,
-        zh: `${unassigned} 个未指派格子`,
-      });
-      hint.style.flex = '1 1 100%';
-      hint.style.textAlign = 'center';
-      p.appendChild(hint);
-    }
+    const hint = el('span', 'hint');
+    hint.textContent = L({
+      en: `${unassigned} cell${unassigned === 1 ? '' : 's'} unassigned${unassigned === 0 ? ' ✓' : ''}`,
+      zh: `${unassigned} 个未指派格子${unassigned === 0 ? ' ✓' : ''}`,
+    });
+    if (unassigned === 0) hint.style.color = 'var(--success)';
+    hint.style.flex = '1 1 100%';
+    hint.style.textAlign = 'center';
+    p.appendChild(hint);
   }
 
   function anyDeleted(pz) {
@@ -1890,22 +1890,41 @@ window.SudokuApp = (function () {
         if (deleted && deleted[rr * nCols + cc]) return true;
         return false;
       };
-      const neighRegion = (rr, cc) => (isOutside(rr, cc) ? -2 : regions[rr * nCols + cc]);
-      /* An unassigned cell (region = -1) touching another unassigned cell
-         does NOT get a border — otherwise the moment any single region
-         gets painted, every remaining boundary between unpainted cells
-         suddenly bristles with stray internal edges. */
-      const cmp = (nr) => (regions[i] < 0 && nr < 0) ? false : regions[i] !== nr;
+      /* Border decision per side. The neighbour can be:
+           - out-of-grid / deleted (outside the shape)   → use bx-*-outer (3px)
+           - a different real region                     → use bx-*     (1.5px, pairs with the other side)
+           - the same region, or two unassigned cells    → no border
+         Two adjacent unassigned cells intentionally get NO border so the
+         paint-in-progress state doesn't bristle with stray internal edges. */
+      const chooseBorder = (rr, cc, side) => {
+        const outside = isOutside(rr, cc);
+        if (outside) {
+          if (regions[i] < 0) return null;  /* unassigned touching outside: no border */
+          return 'bx-' + side + '-outer';
+        }
+        const nr = regions[rr * nCols + cc];
+        if (regions[i] < 0 && nr < 0) return null;
+        if (regions[i] === nr) return null;
+        return 'bx-' + side;
+      };
       if (hasCustom) {
-        if (cmp(neighRegion(r-1, c))) input.classList.add('bx-t');
-        if (cmp(neighRegion(r, c-1))) input.classList.add('bx-l');
-        if (cmp(neighRegion(r+1, c))) input.classList.add('bx-b');
-        if (cmp(neighRegion(r, c+1))) input.classList.add('bx-r');
+        const t = chooseBorder(r-1, c, 't'); if (t) input.classList.add(t);
+        const l = chooseBorder(r, c-1, 'l'); if (l) input.classList.add(l);
+        const b = chooseBorder(r+1, c, 'b'); if (b) input.classList.add(b);
+        const rg = chooseBorder(r, c+1, 'r'); if (rg) input.classList.add(rg);
       } else {
+        /* Internal box separators (1.5px on each side, meet at 3px). */
         if ((c + 1) % boxC === 0 && c !== nCols - 1) input.classList.add('bx-r');
         if (c > 0 && c % boxC === 0)                 input.classList.add('bx-l');
         if ((r + 1) % boxR === 0 && r !== nRows - 1) input.classList.add('bx-b');
         if (r > 0 && r % boxR === 0)                 input.classList.add('bx-t');
+        /* Outer perimeter for classic grids: cells on the edge get the
+           full 3px outer border so the shape's outline matches internal
+           box borders in width. */
+        if (r === 0)         input.classList.add('bx-t-outer');
+        if (c === 0)         input.classList.add('bx-l-outer');
+        if (r === nRows - 1) input.classList.add('bx-b-outer');
+        if (c === nCols - 1) input.classList.add('bx-r-outer');
       }
       if (rainbow && rainbow[i]) {
         input.style.setProperty('--rainbow-bg', spectraColor(rainbow[i] - 1));
@@ -3138,25 +3157,39 @@ window.SudokuApp = (function () {
     };
     for (const k of touch) {
       const cell = state.dom.cells[k]; if (!cell) continue;
-      cell.classList.remove('bx-t','bx-b','bx-l','bx-r');
+      cell.classList.remove('bx-t','bx-b','bx-l','bx-r',
+                            'bx-t-outer','bx-b-outer','bx-l-outer','bx-r-outer');
       const kr = (k / nCols) | 0, kc = k % nCols;
       cell.style.setProperty('--region-bg', p.regions[k] >= 0 ? regionColor(p.regions[k], theme) : 'transparent');
+      /* Match the border-decision from buildCells so incremental repaints
+         stay in sync with the full-render logic. */
+      const kReg = p.regions[k];
+      const chooseSide = (kr2, kc2, side) => {
+        const outside = (kr2 < 0 || kr2 >= nRows || kc2 < 0 || kc2 >= nCols)
+                        || (p.deleted && p.deleted[kr2 * nCols + kc2]);
+        if (outside) {
+          if (kReg < 0) return null;
+          return 'bx-' + side + '-outer';
+        }
+        const nr = p.regions[kr2 * nCols + kc2];
+        if (kReg < 0 && nr < 0) return null;
+        if (kReg === nr) return null;
+        return 'bx-' + side;
+      };
       if (jig) {
-        /* Only draw a border between two "real" region ids that differ.
-           If BOTH sides are -1 (unassigned) skip; otherwise the many
-           stray internal edges the user reported would appear as soon as
-           any single cell got painted. */
-        const kReg = p.regions[k];
-        const cmp = (nr) => (kReg < 0 && nr < 0) ? false : kReg !== nr;
-        if (cmp(neighReg(kr-1, kc))) cell.classList.add('bx-t');
-        if (cmp(neighReg(kr,   kc-1))) cell.classList.add('bx-l');
-        if (cmp(neighReg(kr+1, kc))) cell.classList.add('bx-b');
-        if (cmp(neighReg(kr,   kc+1))) cell.classList.add('bx-r');
+        const tt = chooseSide(kr-1, kc, 't'); if (tt) cell.classList.add(tt);
+        const ll = chooseSide(kr, kc-1, 'l'); if (ll) cell.classList.add(ll);
+        const bb = chooseSide(kr+1, kc, 'b'); if (bb) cell.classList.add(bb);
+        const rr2 = chooseSide(kr, kc+1, 'r'); if (rr2) cell.classList.add(rr2);
       } else {
         if ((kc + 1) % p.boxC === 0 && kc !== nCols - 1) cell.classList.add('bx-r');
         if (kc > 0 && kc % p.boxC === 0)                 cell.classList.add('bx-l');
         if ((kr + 1) % p.boxR === 0 && kr !== nRows - 1) cell.classList.add('bx-b');
         if (kr > 0 && kr % p.boxR === 0)                 cell.classList.add('bx-t');
+        if (kr === 0)         cell.classList.add('bx-t-outer');
+        if (kc === 0)         cell.classList.add('bx-l-outer');
+        if (kr === nRows - 1) cell.classList.add('bx-b-outer');
+        if (kc === nCols - 1) cell.classList.add('bx-r-outer');
       }
     }
   }
