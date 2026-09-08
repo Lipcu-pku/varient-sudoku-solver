@@ -46,6 +46,7 @@
  *     sandwich: { top:[N], bottom:[N], left:[N], right:[N] },  // 0 = no clue
  *     rainbow:  Int8Array(N*N),             // 0 = no color, 1..N = assigned color
  *     flags:    { diagonal, antiKnight, antiKing, antiConsecutive },
+ *     customRules: [{ id, name, code, enabled }, ...]  // user-authored JS rules
  *   }
  */
 /* Attach to `self` so this file loads in both a browser window (where
@@ -172,6 +173,12 @@ self.SudokuCore = (function () {
     };
     /* Deleted cells never carry a region — mark as -1. */
     for (let i = 0; i < total; i++) if (deleted[i]) p.regions[i] = -1;
+    /* User-authored JS constraints ("Custom Constraints" tool). Each entry:
+         { id, name, code, enabled }  — `code` is the body of a function that
+       must `return` a rule descriptor ({ name?, init?, canPlace?, valid? }).
+       The code is plain text so it survives serialize / structured-clone into
+       the solver worker. */
+    p.customRules = [];
     /* Plugin-managed fields (constraints/*.js). */
     for (const c of pluginList()) if (c.newFields) c.newFields(p);
     return p;
@@ -824,6 +831,15 @@ self.SudokuCore = (function () {
       for (const { plugin, handle } of activePlugins) {
         if (plugin.solverCheck && !plugin.solverCheck(p, pluginCtx, handle, i, v)) return false;
       }
+      /* Custom JS rules: canPlace is a pure predicate on the committed grid
+         (cell i is still empty in the board handle). */
+      for (const cr of customRules) {
+        if (!cr.rule.canPlace) continue;
+        let ok;
+        try { ok = cr.rule.canPlace(i, v, cr.B) !== false; }
+        catch (e) { throw new Error('Custom rule "' + cr.name + '" threw in canPlace: ' + ((e && e.message) || e)); }
+        if (!ok) return false;
+      }
       /* Commit. */
       grid[i] = v;
       rowM[r] |= mb; colM[c] |= mb;
@@ -873,6 +889,23 @@ self.SudokuCore = (function () {
       if (!plugin.solverInit) continue;
       const handle = plugin.solverInit(p, pluginCtx);
       if (handle) activePlugins.push({ plugin, handle });
+    }
+
+    /* Custom JS rules (puzzle.customRules) — user-authored constraint code.
+       Each rule is compiled once per solve and bound to the running grid:
+       canPlace prunes tentative placements, valid() filters complete grids.
+       Exceptions abort the solve with a named error rather than silently
+       producing wrong results. */
+    const customRules = [];
+    for (const entry of p.customRules || []) {
+      if (!entry || !entry.code || entry.enabled === false) continue;
+      const label = (entry.name && String(entry.name).trim()) || entry.id || 'custom rule';
+      const c = compileCustomRule(entry.code);
+      if (!c.ok) throw new Error('Custom rule "' + label + '" failed to compile: ' + c.error);
+      const B = makeBoard(nRows, nCols, N, regions, deleted, grid);
+      const rule = c.rule;
+      if (rule.init) rule.init(B);
+      customRules.push({ name: label, rule, B });
     }
 
     /* Seed the initial state; reject inconsistent givens up front. */
@@ -1103,6 +1136,17 @@ self.SudokuCore = (function () {
 
     const solutions = [];
     let reachedCap = false;
+    /* Board-level custom rules (valid() only) cannot prune during search —
+       the solver would have to enumerate plain completions and filter them,
+       which can run essentially forever on a sparse grid. Guard the whole
+       solve with a wall-clock budget whenever such a rule is present and
+       bail out with `customTimeout` instead of grinding. */
+    const hasCustomValid = customRules.some(cr => !!cr.rule.valid);
+    const nowMs = () => (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+    const customSolveStart = nowMs();
+    const CUSTOM_SOLVE_MS = 1500;
+    let customLeaf = 0;
+    let customTimeout = false;
 
     function backtrack() {
       if (reachedCap) return;
@@ -1119,6 +1163,11 @@ self.SudokuCore = (function () {
         /* Full grid. Skyscraper/Sandwich full-line checks already enforced
            along the way, but verify to be safe. Only meaningful on
            hole-free rectangles. */
+        if (hasCustomValid) {
+          if ((++customLeaf & 127) === 0 && nowMs() - customSolveStart > CUSTOM_SOLVE_MS) {
+            customTimeout = true; reachedCap = true; return;
+          }
+        }
         if (!hasHoles) {
           for (let r = 0; r < nRows; r++) {
             const row = [];
@@ -1138,6 +1187,14 @@ self.SudokuCore = (function () {
           }
         }
         if (solutions.length >= SOL_CAP) { reachedCap = true; return; }
+        /* Custom JS rules: valid() filters complete grids. */
+        for (const cr of customRules) {
+          if (!cr.rule.valid) continue;
+          let ok;
+          try { ok = cr.rule.valid(cr.B) !== false; }
+          catch (e) { throw new Error('Custom rule "' + cr.name + '" threw in valid: ' + ((e && e.message) || e)); }
+          if (!ok) return;
+        }
         const digitSnap = Uint8Array.from(grid);
         let colorSnap = null;
         if (spectradokuActive) {
@@ -1163,7 +1220,7 @@ self.SudokuCore = (function () {
     }
 
     backtrack();
-    return { solutions, reachedCap };
+    return { solutions, reachedCap, customTimeout };
   }
 
   /* ---------- Serialize / deserialize (for load/share buttons) ----------
@@ -1227,6 +1284,12 @@ self.SudokuCore = (function () {
     const sky      = compactSides(p.sky);      if (sky)      out.sky      = sky;
     const sandwich = compactSides(p.sandwich); if (sandwich) out.sandwich = sandwich;
     const flags = compactFlags(p.flags); if (flags) out.flags = flags;
+    /* User-authored JS rules (text is JSON-safe). */
+    if (p.customRules && p.customRules.length) {
+      out.customRules = p.customRules
+        .filter(r => r && r.code)
+        .map(r => ({ id: String(r.id), name: r.name || '', code: r.code, enabled: r.enabled !== false }));
+    }
     /* Plugin fields: strip empty arrays / all-zero cell-masks after the
        plugin emits its chunk so each plugin's serialize() stays simple. */
     for (const plugin of pluginList()) {
@@ -1290,7 +1353,178 @@ self.SudokuCore = (function () {
       if (plugin.deserialize) plugin.deserialize(p, j);
     }
     if (j.flags) Object.assign(p.flags, j.flags);
+    /* User-authored JS rules. */
+    p.customRules = [];
+    if (Array.isArray(j.customRules)) {
+      for (const r of j.customRules) {
+        if (!r || typeof r.code !== 'string') continue;
+        p.customRules.push({
+          id:      String(r.id || ('cr' + (p.customRules.length + 1))),
+          name:    String(r.name || ''),
+          code:    r.code,
+          enabled: r.enabled !== false,
+        });
+      }
+    }
     return p;
+  }
+
+  /* ---------- Custom JS rules ("Custom Constraints" tool) ----------
+   *
+   * puzzle.customRules holds user-authored JS as TEXT. Each entry's `code`
+   * is the body of a function (compiled with `new Function`) that must
+   * `return` a rule descriptor:
+   *
+   *   {
+   *     name:     'Anti-Knight',        // optional display name
+   *     init(B)   { ... },              // optional: once per session, precompute
+   *     canPlace(i, v, B) { ... },      // optional: may value v go in cell i?
+   *     valid(B)  { ... },              // optional: is the COMPLETE grid ok?
+   *   }
+   *
+   * B is a read-only "board handle" describing the grid and its current
+   * digits (see makeBoard). canPlace is called by the solver for every
+   * tentative placement AND on the live grid whenever the user types a
+   * digit; cell i is EMPTY (0) in B at that moment. valid is called only
+   * when every cell is filled (solver completion / user fills the last
+   * digit). Both are pure predicates over B — there is no commit/unplace
+   * bookkeeping, so hooks must not keep mutable state across calls (except
+   * values computed once in init or in the code body).
+   *
+   * Rule code runs on the main thread (live editing) and inside the solver
+   * worker (findSolutions). Exceptions abort with a named error rather than
+   * silently mis-solving. */
+
+  const CUSTOM_KNIGHT = [[-2,-1],[-2,1],[-1,-2],[-1,2],[1,-2],[1,2],[2,-1],[2,1]];
+
+  function makeBoard(rows, cols, digits, regions, deleted, values) {
+    const total = rows * cols;
+    const inB = (r, c) => r >= 0 && r < rows && c >= 0 && c < cols;
+    const ORTHO = [[-1,0],[1,0],[0,-1],[0,1]];
+    const KING  = [[-1,-1],[-1,0],[-1,1],[0,-1],[0,1],[1,-1],[1,0],[1,1]];
+    function nbrs(i, list) {
+      const r = (i / cols) | 0, c = i % cols;
+      const out = [];
+      for (const [dr, dc] of list) {
+        const nr = r + dr, nc = c + dc;
+        if (inB(nr, nc)) out.push(nr * cols + nc);
+      }
+      return out;
+    }
+    return {
+      /* Dimensions. N is the digit count (= max digit). */
+      rows, cols, N: digits, total,
+      /* Raw values, index = r*cols + c; 0 = empty. Deleted (hole) cells are
+         always 0 and never receive a placement. Read-only by convention. */
+      values,
+      deleted: deleted || null,
+      has(r, c)        { return inB(r, c) && !(deleted && deleted[r * cols + c]); },
+      idx(r, c)        { return r * cols + c; },
+      /* get(i) reads index i; get(r, c) reads that cell. */
+      get(a, b)        { return b === undefined ? values[a] : values[a * cols + b]; },
+      row(i)           { return (i / cols) | 0; },
+      col(i)           { return i % cols; },
+      region(i)        { return regions ? regions[i] : -1; },
+      rowCells(r)      { const o = []; for (let c = 0; c < cols; c++) o.push(r * cols + c); return o; },
+      colCells(c)      { const o = []; for (let r = 0; r < rows; r++) o.push(r * cols + c); return o; },
+      regionCells(reg) {
+        const o = [];
+        if (!regions) return o;
+        for (let i = 0; i < total; i++) if (regions[i] === reg) o.push(i);
+        return o;
+      },
+      ortho(i)         { return nbrs(i, ORTHO); },  /* up/down/left/right */
+      king(i)          { return nbrs(i, KING); },   /* all 8 neighbours */
+      knight(i)        { return nbrs(i, CUSTOM_KNIGHT); },
+    };
+  }
+
+  /* Compile one rule's code. `code` is the body of a function that returns
+     the rule descriptor. Returns { ok:true, rule } or { ok:false, error }. */
+  function compileCustomRule(code) {
+    const src = String(code || '').trim();
+    if (!src) return { ok: false, error: 'rule code is empty' };
+    let built;
+    try {
+      built = new Function(src)();
+    } catch (e) {
+      return { ok: false, error: (e && e.message) || String(e) };
+    }
+    if (!built || typeof built !== 'object') {
+      return { ok: false, error: 'rule code must end with `return { ... };` — wrap your hooks inside the returned object' };
+    }
+    for (const key of ['name', 'init', 'canPlace', 'valid']) {
+      const v = built[key];
+      if (v == null) continue;
+      if (key === 'name') {
+        if (typeof v !== 'string') return { ok: false, error: '"name" must be a string' };
+      } else if (typeof v !== 'function') {
+        return { ok: false, error: '"' + key + '" must be a function' };
+      }
+    }
+    const name = typeof built.name === 'string' && built.name.trim() ? built.name.trim() : '';
+    return { ok: true, rule: { name, init: built.init, canPlace: built.canPlace, valid: built.valid } };
+  }
+
+  /* Enabled custom-rule entries of a puzzle. */
+  function customRuleEntries(p) {
+    return (p && p.customRules || []).filter(r => r && r.code && r.enabled !== false);
+  }
+
+  /* Live (main-thread) scan over the typed-in grid.
+     Returns { conflicts:Set<number>, messages:string[] }.
+       - conflicts: filled cells where some rule's canPlace(i, v) fails.
+       - messages:  blocking problems — compile failures, runtime exceptions,
+                    or a full-board `valid` that rejects the (complete) grid. */
+  function findCustomConflicts(p) {
+    const conflicts = new Set();
+    const messages = [];
+    const entries = customRuleEntries(p);
+    if (!entries.length) return { conflicts, messages };
+    const N        = p.N;
+    const nRows    = p.rows != null ? p.rows : N;
+    const nCols    = p.cols != null ? p.cols : N;
+    const total    = nRows * nCols;
+    const deleted  = p.deleted || new Uint8Array(total);
+    const values   = p.values;
+    const B = makeBoard(nRows, nCols, (p.digits != null ? p.digits : N), p.regions, deleted, values);
+
+    let boardFull = true;
+    for (let i = 0; i < total; i++) {
+      if (deleted[i]) continue;
+      if (!values[i]) { boardFull = false; break; }
+    }
+
+    for (const entry of entries) {
+      const label = (entry.name && String(entry.name).trim()) || entry.id || 'custom rule';
+      const c = compileCustomRule(entry.code);
+      if (!c.ok) { messages.push('Custom rule "' + label + '" failed to compile: ' + c.error); continue; }
+      const rule = c.rule;
+      try {
+        if (rule.init) rule.init(B);
+        if (typeof rule.canPlace === 'function') {
+          /* Each filled cell j is tested as a fresh placement: temporarily
+             clear j, ask canPlace(j, values[j]), restore. */
+          for (let j = 0; j < total; j++) {
+            if (deleted[j]) continue;
+            const v = values[j]; if (!v) continue;
+            values[j] = 0;
+            let good = true;
+            try { good = rule.canPlace(j, v, B) !== false; }
+            finally { values[j] = v; }
+            if (!good) conflicts.add(j);
+          }
+        }
+        if (boardFull && typeof rule.valid === 'function') {
+          if (rule.valid(B) === false) {
+            messages.push('Custom rule "' + label + '" is violated on the completed grid.');
+          }
+        }
+      } catch (e) {
+        messages.push('Custom rule "' + label + '" threw: ' + ((e && e.message) || e));
+      }
+    }
+    return { conflicts, messages };
   }
 
   return {
@@ -1300,5 +1534,6 @@ self.SudokuCore = (function () {
     newPuzzle, resize, whisperMin,
     findConflicts, findSolutions,
     serialize, deserialize,
+    compileCustomRule, findCustomConflicts,
   };
 })();

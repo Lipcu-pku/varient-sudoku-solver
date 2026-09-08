@@ -17,10 +17,10 @@ window.SudokuApp = (function () {
   const { MIN_N, MAX_N, digitToChar, charToDigit, isDigitKey } = Core;
 
   const PRESETS = [
-    { N: 4, boxR: 2, boxC: 2, label: '4×4' },
-    { N: 6, boxR: 2, boxC: 3, label: '6×6' },
-    { N: 8, boxR: 2, boxC: 4, label: '8×8' },
-    { N: 9, boxR: 3, boxC: 3, label: '9×9' },
+    { N: 4,  boxR: 2, boxC: 2, label: '4×4'   },
+    { N: 6,  boxR: 2, boxC: 3, label: '6×6'   },
+    { N: 8,  boxR: 2, boxC: 4, label: '8×8'   },
+    { N: 9,  boxR: 3, boxC: 3, label: '9×9'   },
     { N: 12, boxR: 3, boxC: 4, label: '12×12' },
     { N: 16, boxR: 4, boxC: 4, label: '16×16' },
   ];
@@ -75,130 +75,91 @@ window.SudokuApp = (function () {
 
   const T = {
     tab: {
-      digit: { en: 'Digits', zh: '数字' },
-      region: { en: 'Regions', zh: '宫格' },
-      rainbow: { en: 'Spectradoku', zh: '光谱数独' },
-      cage: { en: 'Cages', zh: '杀手框' },
-      thermo: { en: 'Thermo', zh: '温度计' },
-      sky: { en: 'Skyscraper', zh: '摩天楼' },
-      sandwich: { en: 'Sandwich', zh: '三明治' },
-      whisper: { en: 'Whisper', zh: '德国耳语线' },
-      regionSum: { en: 'Region Sum', zh: '区域和线' },
-      modular: { en: 'Modular', zh: '模 3 线' },
-      renban: { en: 'Renban', zh: '连线' },
-      palindrome: { en: 'Palindrome', zh: '回文线' },
-      entropic: { en: 'Entropic', zh: '熵线' },
-      parityLine: { en: 'Parity Line', zh: '奇偶线' },
-      arrow: { en: 'Arrow', zh: '箭头' },
-      quadruple: { en: 'Quadruple', zh: '四方组' },
-      kropki: { en: 'Kropki', zh: '黑白点' },
-      compare: { en: 'Compare', zh: '大小符' },
-      xv: { en: 'XV', zh: 'XV' },
-      parity: { en: 'Odd/Even', zh: '奇偶' },
-      littleKiller: { en: 'Little Killer', zh: '小杀手' },
-      colIndex: { en: 'Column Index', zh: '列索引' },
-      rowIndex: { en: 'Row Index', zh: '行索引' },
-      hitpoint: { en: 'Hitpoint', zh: '命中箭头' },
-      extraRegion: { en: 'Extra Region', zh: '额外宫' },
-      slowThermo: { en: 'Slow Thermo', zh: '慢速温度计' },
-      between: { en: 'Between', zh: '介于线' },
-      lockout: { en: 'Lockout', zh: '禁区线' },
-      sequence: { en: 'Sequence', zh: '等差线' },
-      xsum: { en: 'X-Sums', zh: 'X 和' },
-      countCircle: { en: 'Count Circle', zh: '计数圆' },
-      grid: { en: '✂ Grid shape', zh: '✂ 网格形状' },
+      digit:     { en: 'Digits',       zh: '数字' },
+      region:    { en: 'Regions',      zh: '宫格' },
+      rainbow:   { en: 'Spectradoku',  zh: '光谱数独' },
+      cage:      { en: 'Cages',        zh: '杀手框' },
+      thermo:    { en: 'Thermo',       zh: '温度计' },
+      sky:       { en: 'Skyscraper',   zh: '摩天楼' },
+      sandwich:  { en: 'Sandwich',     zh: '三明治' },
+      whisper:   { en: 'Whisper',      zh: '德国耳语线' },
+      regionSum: { en: 'Region Sum',   zh: '区域和线' },
+      modular:   { en: 'Modular',      zh: '模 3 线' },
+      renban:    { en: 'Renban',       zh: '连番线' },
+      palindrome:{ en: 'Palindrome',   zh: '回文线' },
+      entropic:  { en: 'Entropic',     zh: '熵线' },
+      parityLine:{ en: 'Parity Line',  zh: '奇偶线' },
+      arrow:     { en: 'Arrow',        zh: '箭头' },
+      quadruple: { en: 'Quadruple',    zh: '四方组' },
+      kropki:    { en: 'Kropki',       zh: '黑白点' },
+      compare:   { en: 'Compare',      zh: '大小符' },
+      xv:        { en: 'XV',           zh: 'XV' },
+      parity:    { en: 'Odd/Even',     zh: '奇偶' },
+      littleKiller:{ en: 'Little Killer', zh: '小杀手' },
+      colIndex:  { en: 'Column Index', zh: '列索引' },
+      rowIndex:  { en: 'Row Index',    zh: '行索引' },
+      hitpoint:  { en: 'Hitpoint',     zh: '命中箭头' },
+      extraRegion:{ en: 'Extra Region', zh: '额外宫' },
+      slowThermo:{ en: 'Slow Thermo',  zh: '慢速温度计' },
+      between:   { en: 'Between',      zh: '介于线' },
+      lockout:   { en: 'Lockout',      zh: '禁区线' },
+      sequence:  { en: 'Sequence',     zh: '等差线' },
+      xsum:      { en: 'X-Sums',       zh: 'X 和' },
+      countCircle:{ en: 'Count Circle', zh: '计数圆' },
+      custom:    { en: 'Custom Constraints', zh: '自定义限制' },
+      grid:      { en: '✂ Grid shape', zh: '✂ 网格形状' },
     },
     flag: {
-      diagonal: { en: 'X (diagonals)', zh: 'X（对角）' },
-      antiKnight: { en: 'Anti-Knight', zh: '反马步' },
-      antiKing: { en: 'Anti-King', zh: '反王步' },
-      antiConsecutive: { en: 'Anti-Consecutive', zh: '反邻数' },
-      disjoint: { en: 'Disjoint Groups', zh: '同位置组' },
+      diagonal:        { en: 'X (diagonals)',     zh: 'X（对角）' },
+      antiKnight:      { en: 'Anti-Knight',       zh: '反马步' },
+      antiKing:        { en: 'Anti-King',         zh: '反王步' },
+      antiConsecutive: { en: 'Anti-Consecutive',  zh: '反邻数' },
+      disjoint:        { en: 'Disjoint Groups',   zh: '同位置组' },
     },
     hint: {
-      digit: {
-        en: 'Type 1..9 / A..G to place a given. Backspace clears.',
-        zh: '输入 1..9 / A..G 填入已知数字，Backspace 清除。'
-      },
-      region: {
-        en: 'Pick a region color, then click or drag across cells to paint. Each region needs exactly N cells.',
-        zh: '选择一种颜色后点击或拖动格子上色。每个宫格必须包含 N 个单元格。'
-      },
-      rainbow: {
-        en: 'Spectradoku: pick a color, then click or drag to color cells. Each row/column/box must contain all N colors, and each digit must appear once in every color.',
-        zh: '光谱数独：选择一种颜色后点击或拖动格子上色。每行/列/宫必须包含全部 N 种颜色，且每个数字在 N 种颜色中各出现一次。'
-      },
-      cage: {
-        en: 'Click-drag to paint cells into the current cage (drag on selected cells to remove them). Click any finalized cage to edit its shape and sum. Enter a sum, then "Finish cage" to lock it.',
-        zh: '按住并拖动可将格子加入当前杀手框（在已选格上拖动可移除）。点击已完成的杀手框即可修改其形状与总和。输入总和后按"完成杀手框"锁定。'
-      },
-      thermo: {
-        en: 'Click or drag along cells in order (orthogonal or diagonal) — the first cell is the bulb. Values must strictly increase along the path. "Finish thermo" to start a new one.',
-        zh: '按顺序点击或拖动格子（正交或对角相邻），首格为温度计球端，数值沿路径严格递增。按"完成温度计"开始新一根。'
-      },
-      sky: {
-        en: 'Type a visible-skyscraper count 1..N into any outer edge cell. Blank clears.',
-        zh: '在任意外圈格中输入 1..N 的摩天楼可见数，留空清除。'
-      },
-      sandwich: {
-        en: 'Type the sum of digits strictly between 1 and N in that row/column. Blank clears.',
-        zh: '在外圈格中输入该行/列 1 与 N 之间数字的和，留空清除。'
-      },
-      whisper: {
-        en: 'Click or drag along adjacent cells (orthogonal or diagonal). On the green line, neighbours must differ by ≥ ⌈N/2⌉.',
-        zh: '点击或拖动相邻格（正交或对角）。绿线上相邻两格的差必须 ≥ ⌈N/2⌉。'
-      },
-      regionSum: {
-        en: 'Click or drag along adjacent cells (orthogonal or diagonal). The blue line’s portion inside each region must share one sum.',
-        zh: '点击或拖动相邻格（正交或对角）。蓝线在每个宫格内的分段和必须相等。'
-      },
-      modular: {
-        en: 'Click or drag along adjacent cells (orthogonal or diagonal). Any 3 consecutive cells on the purple line must cover residues {0,1,2} mod 3.',
-        zh: '点击或拖动相邻格（正交或对角）。紫线上任意 3 个连续格的余数必须覆盖 {0,1,2} (mod 3)。'
-      },
-      renban: {
-        en: 'Click or drag along adjacent cells. The digits on a renban line form a set of consecutive numbers in any order, no repeats.',
-        zh: '点击或拖动相邻格。连线上的数字为若干连续数（任意顺序，不重复）。'
-      },
-      palindrome: {
-        en: 'Click or drag along adjacent cells. Digits on a palindrome read the same forwards and backwards.',
-        zh: '点击或拖动相邻格。回文线上的数字正读反读相同。'
-      },
-      entropic: {
-        en: 'Click or drag along adjacent cells. Every 3 consecutive cells must include one digit from Low, Mid, and High thirds (e.g. 1-3 / 4-6 / 7-9).',
-        zh: '点击或拖动相邻格。任意连续 3 格必须包含低、中、高三段各一个数字（例如 1-3 / 4-6 / 7-9）。'
-      },
-      parityLine: {
-        en: 'Click or drag along adjacent cells. Consecutive cells alternate odd / even.',
-        zh: '点击或拖动相邻格。相邻格的奇偶性交替。'
-      },
-      arrow: {
-        en: 'Two phases: paint the base (pill of 1-3 orthogonally-adjacent cells) then "Next: shaft" and paint the shaft cells. Shaft digits sum to the multi-digit number on the base. "Finish arrow" to lock.',
-        zh: '两步：先绘制圆圈（1-3 个正交相邻的格子组成的胶囊），然后按"下一步：箭杆"绘制箭杆。箭杆数字之和等于圆圈上读出的数。按"完成箭头"锁定。'
-      },
-      quadruple: {
-        en: 'Type up to 4 required digits, then click a cell — the mark is placed at the intersection whose top-left cell is the one you clicked. Each digit must appear in at least one of the 4 surrounding cells. Click again to clear.',
-        zh: '在框中输入需要的 1-4 个数字，然后点击格子 — 标记会放在该格右下方的交点，四个相邻格中至少有一个含该数字。再次点击相同交点可清除。'
-      },
-      kropki: {
-        en: 'Pick a dot type, then click two orthogonally-adjacent cells to toggle a dot between them. White = consecutive, black = ratio 2.',
-        zh: '选择黑/白点，然后点击两个正交相邻的格子在其边上放置/移除点。白点为相邻数，黑点为倍数关系。'
-      },
-      compare: {
-        en: 'Pick "<" or ">", then click two orthogonally-adjacent cells in order. The mark on the shared edge points at the smaller cell.',
-        zh: '选择"<"或">"，然后按顺序点击两个正交相邻格；共享边上的符号开口朝向较大的格。'
-      },
-      xv: {
-        en: 'Pick X (sum 10) or V (sum 5), then click two orthogonally-adjacent cells to toggle the mark on their shared edge.',
-        zh: '选择 X（和为 10）或 V（和为 5），然后点击两个正交相邻的格子在其边上放置/移除标记。'
-      },
-      parity: {
-        en: 'Pick Odd (circle) or Even (square), then click or drag across cells to mark them. Click a marked cell with the same tool to clear.',
-        zh: '选择"奇"（圆圈）或"偶"（方块），然后点击或拖动格子标记；对已相同标记的格再次点击可清除。'
-      },
+      digit:  { en: 'Type 1..9 / A..G to place a given. Backspace clears.',
+                zh: '输入 1..9 / A..G 填入已知数字，Backspace 清除。' },
+      region: { en: 'Pick a region color, then click or drag across cells to paint. Each region needs exactly N cells.',
+                zh: '选择一种颜色后点击或拖动格子上色。每个宫格必须包含 N 个单元格。' },
+      rainbow:{ en: 'Spectradoku: pick a color, then click or drag to color cells. Each row/column/box must contain all N colors, and each digit must appear once in every color.',
+                zh: '光谱数独：选择一种颜色后点击或拖动格子上色。每行/列/宫必须包含全部 N 种颜色，且每个数字在 N 种颜色中各出现一次。' },
+      cage:   { en: 'Click-drag to paint cells into the current cage (drag on selected cells to remove them). Click any finalized cage to edit its shape and sum. Enter a sum, then "Finish cage" to lock it.',
+                zh: '按住并拖动可将格子加入当前杀手框（在已选格上拖动可移除）。点击已完成的杀手框即可修改其形状与总和。输入总和后按"完成杀手框"锁定。' },
+      thermo: { en: 'Click or drag along cells in order (orthogonal or diagonal) — the first cell is the bulb. Values must strictly increase along the path. "Finish thermo" to start a new one.',
+                zh: '按顺序点击或拖动格子（正交或对角相邻），首格为温度计球端，数值沿路径严格递增。按"完成温度计"开始新一根。' },
+      sky:    { en: 'Type a visible-skyscraper count 1..N into any outer edge cell. Blank clears.',
+                zh: '在任意外圈格中输入 1..N 的摩天楼可见数，留空清除。' },
+      sandwich: { en: 'Type the sum of digits strictly between 1 and N in that row/column. Blank clears.',
+                  zh: '在外圈格中输入该行/列 1 与 N 之间数字的和，留空清除。' },
+      whisper:  { en: 'Click or drag along adjacent cells (orthogonal or diagonal). On the green line, neighbours must differ by ≥ ⌈N/2⌉.',
+                  zh: '点击或拖动相邻格（正交或对角）。绿线上相邻两格的差必须 ≥ ⌈N/2⌉。' },
+      regionSum:{ en: 'Click or drag along adjacent cells (orthogonal or diagonal). The blue line’s portion inside each region must share one sum.',
+                  zh: '点击或拖动相邻格（正交或对角）。蓝线在每个宫格内的分段和必须相等。' },
+      modular:  { en: 'Click or drag along adjacent cells (orthogonal or diagonal). Any 3 consecutive cells on the purple line must cover residues {0,1,2} mod 3.',
+                  zh: '点击或拖动相邻格（正交或对角）。紫线上任意 3 个连续格的余数必须覆盖 {0,1,2} (mod 3)。' },
+      renban:   { en: 'Click or drag along adjacent cells. The digits on a renban line form a set of consecutive numbers in any order, no repeats.',
+                  zh: '点击或拖动相邻格。连番线上的数字为若干连续数（任意顺序，不重复）。' },
+      palindrome: { en: 'Click or drag along adjacent cells. Digits on a palindrome read the same forwards and backwards.',
+                    zh: '点击或拖动相邻格。回文线上的数字正读反读相同。' },
+      entropic: { en: 'Click or drag along adjacent cells. Every 3 consecutive cells must include one digit from Low, Mid, and High thirds (e.g. 1-3 / 4-6 / 7-9).',
+                  zh: '点击或拖动相邻格。任意连续 3 格必须包含低、中、高三段各一个数字（例如 1-3 / 4-6 / 7-9）。' },
+      parityLine:{ en: 'Click or drag along adjacent cells. Consecutive cells alternate odd / even.',
+                   zh: '点击或拖动相邻格。相邻格的奇偶性交替。' },
+      arrow:    { en: 'Two phases: paint the base (pill of 1-3 orthogonally-adjacent cells) then "Next: shaft" and paint the shaft cells. Shaft digits sum to the multi-digit number on the base. "Finish arrow" to lock.',
+                  zh: '两步：先绘制圆圈（1-3 个正交相邻的格子组成的胶囊），然后按"下一步：箭杆"绘制箭杆。箭杆数字之和等于圆圈上读出的数。按"完成箭头"锁定。' },
+      quadruple:{ en: 'Type up to 4 required digits, then click a cell — the mark is placed at the intersection whose top-left cell is the one you clicked. Each digit must appear in at least one of the 4 surrounding cells. Click again to clear.',
+                  zh: '在框中输入需要的 1-4 个数字，然后点击格子 — 标记会放在该格右下方的交点，四个相邻格中至少有一个含该数字。再次点击相同交点可清除。' },
+      kropki:   { en: 'Pick a dot type, then click two orthogonally-adjacent cells to toggle a dot between them. White = consecutive, black = ratio 2.',
+                  zh: '选择黑/白点，然后点击两个正交相邻的格子在其边上放置/移除点。白点为相邻数，黑点为倍数关系。' },
+      compare:  { en: 'Pick "<" or ">", then click two orthogonally-adjacent cells in order. The mark on the shared edge points at the smaller cell.',
+                  zh: '选择"<"或">"，然后按顺序点击两个正交相邻格；共享边上的符号开口朝向较大的格。' },
+      xv:       { en: 'Pick X (sum 10) or V (sum 5), then click two orthogonally-adjacent cells to toggle the mark on their shared edge.',
+                  zh: '选择 X（和为 10）或 V（和为 5），然后点击两个正交相邻的格子在其边上放置/移除标记。' },
+      parity:   { en: 'Pick Odd (circle) or Even (square), then click or drag across cells to mark them. Click a marked cell with the same tool to clear.',
+                  zh: '选择"奇"（圆圈）或"偶"（方块），然后点击或拖动格子标记；对已相同标记的格再次点击可清除。' },
       littleKiller: {
-        en: 'Click any outer-edge cell to pick a diagonal anchor. Choose a direction (1 or 2 options depending on position) and enter a sum, then Add. Diagonals reached from either end are treated as the same arrow — the editor blocks duplicates. Click existing arrows here to delete them.',
-        zh: '点击网格外圈任一格作为对角锚点，按其位置选择方向（1 或 2 种），输入总和后按"添加"。同一对角线的两个端点视为同一箭头，编辑器会阻止重复。点击此处已有箭头可删除。',
+        en: 'Click any outer-edge cell to pick a diagonal anchor. Choose a direction (1 or 2 options depending on position) and enter a sum, then Add. The four corner slots anchor the corner-to-corner diagonals. Diagonals reached from either end are treated as the same arrow — the editor blocks duplicates. Click existing arrows here to delete them.',
+        zh: '点击网格外圈任一格作为对角锚点，按其位置选择方向（1 或 2 种），输入总和后按"添加"。四个转角锚点对应贯穿对角的整条主/副对角线。同一对角线的两个端点视为同一箭头，编辑器会阻止重复。点击此处已有箭头可删除。',
       },
       colIndex: {
         en: 'Click or drag over cells to mark them. In a marked cell at (X, Y): if the digit is Z, then row X column Z must equal Y.',
@@ -244,57 +205,61 @@ window.SudokuApp = (function () {
         en: 'Set rows, columns, and digit count, then Apply. Click cells to toggle them as deleted (holes). After applying an irregular shape you should repaint the regions.',
         zh: '设置行数、列数、数字个数，然后按"应用"。点击格子可将其标记为删除（空缺）。应用不规则形状后应重画宫格。',
       },
+      custom: {
+        en: 'Write your own constraint in plain JavaScript. The code must end with `return { ... };` (see the API docs). Every enabled rule runs live — cells that break it turn red — and inside the solver.',
+        zh: '用纯 JavaScript 编写你自己的约束。代码必须以 `return { ... };` 结尾（详见 API 文档）。启用中的规则会实时生效——违反规则的格子标红——并参与求解。',
+      },
     },
-    solve: { en: 'Solve', zh: '求解' },
-    prev: { en: '◀ Previous', zh: '◀ 上一解' },
-    next: { en: 'Next ▶', zh: '下一解 ▶' },
-    pencil: { en: 'Pencilmarks', zh: '候选数' },
-    reset: { en: 'Clear digits', zh: '清空数字' },
-    example: { en: 'Load example', zh: '载入示例' },
-    wipe: { en: 'Clear all', zh: '全部清除' },
-    live: { en: 'Live solve', zh: '实时求解' },
-    boxRLbl: { en: 'Box rows', zh: '宫格行数' },
-    boxCLbl: { en: 'Box cols', zh: '宫格列数' },
-    newCage: { en: 'Finish cage', zh: '完成杀手框' },
-    newTh: { en: 'Finish thermo', zh: '完成温度计' },
-    delSel: { en: 'Delete last cell', zh: '删除最后一格' },
-    sumLbl: { en: 'Sum', zh: '总和' },
-    regLbl: { en: 'Region', zh: '宫格 ID' },
-    finishLine: { en: 'Finish line', zh: '完成线' },
-    delLine: { en: 'Delete last line', zh: '删除上一条线' },
-    dotWhite: { en: 'White dot', zh: '白点' },
-    dotBlack: { en: 'Black dot', zh: '黑点' },
-    clearDots: { en: 'Clear all dots', zh: '清空所有点' },
-    cmpLt: { en: '< (a < b)', zh: '< （a < b）' },
-    cmpGt: { en: '> (a > b)', zh: '> （a > b）' },
-    clearCmp: { en: 'Clear all compare', zh: '清空所有大小符' },
-    xvX: { en: 'X (sum 10)', zh: 'X（和 10）' },
-    xvV: { en: 'V (sum 5)', zh: 'V（和 5）' },
-    clearXV: { en: 'Clear all XV', zh: '清空所有 XV' },
-    parOdd: { en: 'Odd (○)', zh: '奇（○）' },
-    parEven: { en: 'Even (□)', zh: '偶（□）' },
-    clearParity: { en: 'Clear all parity', zh: '清空所有奇偶标记' },
-    finishER: { en: 'Finish region', zh: '完成额外宫' },
-    delLastER: { en: 'Delete last region', zh: '删除上一额外宫' },
+    solve:   { en: 'Solve',           zh: '求解' },
+    prev:    { en: '◀ Previous',      zh: '◀ 上一解' },
+    next:    { en: 'Next ▶',          zh: '下一解 ▶' },
+    pencil:  { en: 'Pencilmarks',     zh: '候选数' },
+    reset:   { en: 'Clear digits',    zh: '清空数字' },
+    example: { en: 'Load example',    zh: '载入示例' },
+    wipe:    { en: 'Clear all',       zh: '全部清除' },
+    live:    { en: 'Live solve',      zh: '实时求解' },
+    boxRLbl: { en: 'Box rows',        zh: '宫格行数' },
+    boxCLbl: { en: 'Box cols',        zh: '宫格列数' },
+    newCage: { en: 'Finish cage',     zh: '完成杀手框' },
+    newTh:   { en: 'Finish thermo',   zh: '完成温度计' },
+    delSel:  { en: 'Delete last cell', zh: '删除最后一格' },
+    sumLbl:  { en: 'Sum',             zh: '总和' },
+    regLbl:  { en: 'Region',          zh: '宫格 ID' },
+    finishLine: { en: 'Finish line',  zh: '完成线' },
+    delLine:    { en: 'Delete last line', zh: '删除上一条线' },
+    dotWhite:   { en: 'White dot',    zh: '白点' },
+    dotBlack:   { en: 'Black dot',    zh: '黑点' },
+    clearDots:  { en: 'Clear all dots', zh: '清空所有点' },
+    cmpLt:      { en: '< (a < b)',    zh: '< （a < b）' },
+    cmpGt:      { en: '> (a > b)',    zh: '> （a > b）' },
+    clearCmp:   { en: 'Clear all compare', zh: '清空所有大小符' },
+    xvX:        { en: 'X (sum 10)',   zh: 'X（和 10）' },
+    xvV:        { en: 'V (sum 5)',    zh: 'V（和 5）' },
+    clearXV:    { en: 'Clear all XV', zh: '清空所有 XV' },
+    parOdd:     { en: 'Odd (○)',      zh: '奇（○）' },
+    parEven:    { en: 'Even (□)',     zh: '偶（□）' },
+    clearParity:{ en: 'Clear all parity', zh: '清空所有奇偶标记' },
+    finishER:   { en: 'Finish region', zh: '完成额外宫' },
+    delLastER:  { en: 'Delete last region', zh: '删除上一额外宫' },
     finishSlow: { en: 'Finish slow thermo', zh: '完成慢温度计' },
-    finishBet: { en: 'Finish between line', zh: '完成介于线' },
-    finishLo: { en: 'Finish lockout', zh: '完成禁区线' },
-    finishSeq: { en: 'Finish sequence', zh: '完成等差线' },
+    finishBet:  { en: 'Finish between line', zh: '完成介于线' },
+    finishLo:   { en: 'Finish lockout',   zh: '完成禁区线' },
+    finishSeq:  { en: 'Finish sequence',  zh: '完成等差线' },
   };
 
   /* Which puzzle field each line-based tool uses. */
   const LINE_FIELD = {
-    whisper: 'whispers',
-    regionSum: 'regionSums',
-    modular: 'modulars',
-    renban: 'renbans',
+    whisper:    'whispers',
+    regionSum:  'regionSums',
+    modular:    'modulars',
+    renban:     'renbans',
     palindrome: 'palindromes',
-    entropic: 'entropics',
+    entropic:   'entropics',
     parityLine: 'parityLines',
     slowThermo: 'slowThermos',
-    between: 'betweenLines',
-    lockout: 'lockoutLines',
-    sequence: 'sequenceLines',
+    between:    'betweenLines',
+    lockout:    'lockoutLines',
+    sequence:   'sequenceLines',
   };
   /* Tool ids that share the generic line-draft workflow (Finish / Delete-last
      buttons, click-or-drag paint via addLineCellLight). */
@@ -305,18 +270,18 @@ window.SudokuApp = (function () {
 
   const EXAMPLES = {
     9: [
-      5, 3, 0, 0, 7, 0, 0, 0, 0,
-      6, 0, 0, 1, 9, 5, 0, 0, 0,
-      0, 9, 8, 0, 0, 0, 0, 6, 0,
-      8, 0, 0, 0, 6, 0, 0, 0, 3,
-      4, 0, 0, 8, 0, 3, 0, 0, 1,
-      7, 0, 0, 0, 2, 0, 0, 0, 6,
-      0, 6, 0, 0, 0, 0, 2, 8, 0,
-      0, 0, 0, 4, 1, 9, 0, 0, 5,
-      0, 0, 0, 0, 8, 0, 0, 7, 9,
+      5,3,0, 0,7,0, 0,0,0,
+      6,0,0, 1,9,5, 0,0,0,
+      0,9,8, 0,0,0, 0,6,0,
+      8,0,0, 0,6,0, 0,0,3,
+      4,0,0, 8,0,3, 0,0,1,
+      7,0,0, 0,2,0, 0,0,6,
+      0,6,0, 0,0,0, 2,8,0,
+      0,0,0, 4,1,9, 0,0,5,
+      0,0,0, 0,8,0, 0,7,9,
     ],
-    4: [1, 0, 0, 4, 0, 0, 2, 0, 0, 3, 0, 0, 2, 0, 0, 3],
-    6: [1, 0, 0, 0, 0, 6, 0, 5, 0, 1, 0, 0, 0, 0, 4, 0, 0, 1, 5, 0, 0, 0, 0, 4, 0, 0, 5, 6, 0, 0, 6, 0, 0, 0, 0, 5],
+    4: [1,0,0,4, 0,0,2,0, 0,3,0,0, 2,0,0,3],
+    6: [1,0,0,0,0,6, 0,5,0,1,0,0, 0,0,4,0,0,1, 5,0,0,0,0,4, 0,0,5,6,0,0, 6,0,0,0,0,5],
   };
 
   /* Module state — one live puzzle at a time. */
@@ -529,13 +494,14 @@ window.SudokuApp = (function () {
   /* Tool tabs are grouped by category so related tools sit on the same row.
      Each group renders as its own centered pill row inside `.tool-tabs-wrap`. */
   const TOOL_GROUPS = [
-    { label: { en: 'Basic', zh: '基础' }, tools: ['digit', 'region', 'rainbow', 'cage', 'extraRegion', 'grid'] },
-    { label: { en: 'Lines', zh: '线约束' }, tools: ['thermo', 'slowThermo', 'whisper', 'regionSum', 'modular', 'renban', 'palindrome', 'entropic', 'parityLine', 'between', 'lockout', 'sequence'] },
-    { label: { en: 'Arrows', zh: '箭头' }, tools: ['arrow', 'hitpoint'] },
+    { label: { en: 'Basic',      zh: '基础'   }, tools: ['digit', 'region', 'rainbow', 'cage', 'extraRegion', 'grid'] },
+    { label: { en: 'Lines',      zh: '线约束' }, tools: ['thermo', 'slowThermo', 'whisper', 'regionSum', 'modular', 'renban', 'palindrome', 'entropic', 'parityLine', 'between', 'lockout', 'sequence'] },
+    { label: { en: 'Arrows',     zh: '箭头'   }, tools: ['arrow', 'hitpoint'] },
     { label: { en: 'Edge clues', zh: '外圈线索' }, tools: ['sky', 'sandwich', 'littleKiller', 'xsum'] },
     { label: { en: 'Edge marks', zh: '边标记' }, tools: ['kropki', 'compare', 'xv'] },
-    { label: { en: 'Point marks', zh: '点标记' }, tools: ['quadruple'] },
+    { label: { en: 'Point marks',zh: '点标记' }, tools: ['quadruple'] },
     { label: { en: 'Cell marks', zh: '格子标记' }, tools: ['parity', 'colIndex', 'rowIndex', 'countCircle'] },
+    { label: { en: 'Custom',     zh: '自定义' }, tools: ['custom'] },
   ];
 
   function buildToolTabs(host) {
@@ -587,27 +553,28 @@ window.SudokuApp = (function () {
     hint.style.textAlign = 'center';
     p.appendChild(hint);
 
-    if (state.tool === 'region') fillRegionPanel(p);
-    if (state.tool === 'rainbow') fillRainbowPanel(p);
-    if (state.tool === 'cage') fillCagePanel(p);
-    if (state.tool === 'thermo') fillThermoPanel(p);
-    if (state.tool === 'sky') fillSkyPanel(p);
-    if (state.tool === 'sandwich') fillSandwichPanel(p);
+    if (state.tool === 'region')    fillRegionPanel(p);
+    if (state.tool === 'rainbow')   fillRainbowPanel(p);
+    if (state.tool === 'cage')      fillCagePanel(p);
+    if (state.tool === 'thermo')    fillThermoPanel(p);
+    if (state.tool === 'sky')       fillSkyPanel(p);
+    if (state.tool === 'sandwich')  fillSandwichPanel(p);
     if (LINE_TOOLS.has(state.tool)) fillLinePanel(p);
-    if (state.tool === 'arrow') fillArrowPanel(p);
+    if (state.tool === 'arrow')     fillArrowPanel(p);
     if (state.tool === 'quadruple') fillQuadruplePanel(p);
-    if (state.tool === 'kropki') fillKropkiPanel(p);
-    if (state.tool === 'compare') fillComparePanel(p);
-    if (state.tool === 'xv') fillXVPanel(p);
-    if (state.tool === 'parity') fillParityPanel(p);
+    if (state.tool === 'kropki')    fillKropkiPanel(p);
+    if (state.tool === 'compare')   fillComparePanel(p);
+    if (state.tool === 'xv')        fillXVPanel(p);
+    if (state.tool === 'parity')    fillParityPanel(p);
     if (state.tool === 'littleKiller') fillLittleKillerPanel(p);
-    if (state.tool === 'colIndex') fillColIndexPanel(p);
-    if (state.tool === 'rowIndex') fillRowIndexPanel(p);
-    if (state.tool === 'hitpoint') fillHitpointPanel(p);
+    if (state.tool === 'colIndex')  fillColIndexPanel(p);
+    if (state.tool === 'rowIndex')  fillRowIndexPanel(p);
+    if (state.tool === 'hitpoint')  fillHitpointPanel(p);
     if (state.tool === 'extraRegion') fillExtraRegionPanel(p);
-    if (state.tool === 'xsum') fillXSumPanel(p);
+    if (state.tool === 'xsum')      fillXSumPanel(p);
     if (state.tool === 'countCircle') fillCountCirclePanel(p);
-    if (state.tool === 'grid') fillGridPanel(p);
+    if (state.tool === 'custom')     fillCustomPanel(p);
+    if (state.tool === 'grid')      fillGridPanel(p);
   }
 
   function fillGridPanel(p) {
@@ -640,9 +607,9 @@ window.SudokuApp = (function () {
     );
     p.appendChild(btn({ en: 'Apply', zh: '应用' }, {
       onClick: () => {
-        const R = Number(rowsInp.value) | 0;
-        const C = Number(colsInp.value) | 0;
-        const D = Number(digitsInp.value) | 0;
+        const R  = Number(rowsInp.value) | 0;
+        const C  = Number(colsInp.value) | 0;
+        const D  = Number(digitsInp.value) | 0;
         const RG = Number(regionsInp.value) | 0;
         if (R < 2 || R > 16 || C < 2 || C > 16 || D < 2 || D > 16 || RG < 1) return;
         applyGridShape(R, C, D, RG);
@@ -670,6 +637,243 @@ window.SudokuApp = (function () {
     hint.style.textAlign = 'center';
     p.appendChild(hint);
   }
+
+  /* ---------- Custom Constraints tool (user-authored JS rules) ---------- */
+  const CUST_LBL = {
+    docs:      { en: 'API docs',        zh: 'API 文档' },
+    newRule:   { en: '+ New rule',      zh: '+ 新建规则' },
+    examples:  { en: 'Insert example:', zh: '插入示例：' },
+    delete:    { en: 'Delete',          zh: '删除' },
+    noRules:   { en: 'No custom rules yet — add one with “+ New rule” or insert an example below.',
+                 zh: '还没有自定义规则 — 点击“+ 新建规则”新建，或直接插入下方示例。' },
+    compiled:  { en: '✓ compiled',      zh: '✓ 编译通过' },
+    disabled:  { en: 'disabled',        zh: '未启用' },
+    hookHint:  { en: 'hooks:',          zh: '钩子：' },
+    codeTitle: { en: 'Custom rule code — must end with `return { ... };`. Ctrl+Enter re-solves.',
+                 zh: '自定义规则代码 — 必须以 `return { ... };` 结尾。Ctrl+Enter 立即重新求解。' },
+    emptyCode: { en: 'code is empty',   zh: '代码为空' },
+  };
+  let customRuleSeq = 0;
+  let customAnalyzeTimer = null;
+  let customDocsEl = null;
+  function customRuleId() {
+    customRuleSeq++;
+    return 'cr' + Date.now().toString(36) + '-' + customRuleSeq;
+  }
+  const CUSTOM_SKELETON = [
+    '// 在这里编写规则，最后必须以 `return { ... };` 结尾。',
+    '// End every rule with `return { ... };`.',
+    'return {',
+    "  name: 'My rule',",
+    '  // 每次尝试把数字 v 放入格子 i 时调用；返回 false 则拒绝。',
+    '  // Called for every trial placement (v into i); return false to reject.',
+    '  // B 是只读棋盘对象；调用时格 i 为空，B.values[j] 是其它格的当前数字。',
+    '  canPlace(i, v, B) {',
+    '    return true;   // TODO: 在这里写你的判断',
+    '  },',
+    '  // 整盘填满后的最终校验（可选）。',
+    '  // Final check once the whole grid is filled (optional).',
+    '  // valid(B) {',
+    '  //   return true;',
+    '  // },',
+    '};',
+  ].join('\n');
+
+  /* Compile one rule and describe it (for the inline status line). */
+  function customCompileStatus(rule) {
+    if (!rule.code || !String(rule.code).trim()) {
+      return { ok: false, error: L(CUST_LBL.emptyCode) };
+    }
+    const c = Core.compileCustomRule(rule.code);
+    if (!c.ok) return { ok: false, error: c.error };
+    const hooks = [];
+    if (c.rule.canPlace) hooks.push('canPlace');
+    if (c.rule.valid)    hooks.push('valid');
+    if (c.rule.init)     hooks.push('init');
+    return { ok: true, hooks };
+  }
+
+  function scheduleCustomAnalyze() {
+    if (customAnalyzeTimer) clearTimeout(customAnalyzeTimer);
+    customAnalyzeTimer = setTimeout(() => { customAnalyzeTimer = null; analyze(); }, 450);
+  }
+
+  function customInsertExample(entry) {
+    const pz = state.puzzle;
+    pz.customRules = pz.customRules || [];
+    pz.customRules.push({ id: customRuleId(), name: L(entry.name), code: entry.code, enabled: true });
+    fillToolPanel();
+    analyze();
+  }
+
+  function buildRuleCard(p, rule) {
+    const pz = state.puzzle;
+    const card = el('div', 'cust-rule' + (rule.enabled === false ? ' disabled' : ''));
+
+    const head = el('div', 'cust-rule-head');
+    const on = el('input');
+    on.type = 'checkbox';
+    on.checked = rule.enabled !== false;
+    on.title = L({ en: 'Enable / disable this rule', zh: '启用 / 停用该规则' });
+    on.addEventListener('change', () => {
+      rule.enabled = on.checked;
+      card.classList.toggle('disabled', !on.checked);
+      updateStatus();
+      analyze();
+    });
+    head.appendChild(on);
+    const nameIn = el('input', 'cust-name');
+    nameIn.type = 'text';
+    nameIn.value = rule.name || '';
+    nameIn.placeholder = L({ en: 'Rule name', zh: '规则名称' });
+    nameIn.maxLength = 60;
+    nameIn.addEventListener('input', () => { rule.name = nameIn.value; });
+    head.appendChild(nameIn);
+    const del = el('button', 'cust-del');
+    del.textContent = L(CUST_LBL.delete);
+    del.type = 'button';
+    del.title = L({ en: 'Remove this rule', zh: '移除该规则' });
+    del.addEventListener('click', () => {
+      const arr = pz.customRules || [];
+      const at = arr.indexOf(rule);
+      if (at >= 0) arr.splice(at, 1);
+      fillToolPanel();
+      analyze();
+    });
+    head.appendChild(del);
+    card.appendChild(head);
+
+    const code = el('textarea', 'cust-code');
+    code.value = rule.code || '';
+    code.spellcheck = false;
+    code.autocomplete = 'off';
+    code.wrap = 'off';
+    code.rows = 10;
+    code.title = L(CUST_LBL.codeTitle);
+    code.addEventListener('keydown', e => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+        e.preventDefault();
+        if (customAnalyzeTimer) { clearTimeout(customAnalyzeTimer); customAnalyzeTimer = null; }
+        analyze();
+      }
+    });
+    code.addEventListener('input', () => {
+      rule.code = code.value;
+      updateStatus();
+      scheduleCustomAnalyze();
+    });
+    card.appendChild(code);
+
+    const status = el('div', 'cust-status');
+    card.appendChild(status);
+
+    function updateStatus() {
+      const s = customCompileStatus(rule);
+      status.classList.toggle('err', !s.ok);
+      status.classList.toggle('ok', s.ok);
+      if (!s.ok) {
+        status.textContent = '✗ ' + s.error;
+        return;
+      }
+      const hookText = s.hooks && s.hooks.length ? ' — ' + L(CUST_LBL.hookHint) + ' ' + s.hooks.join(' · ') : '';
+      status.textContent = (rule.enabled === false ? L(CUST_LBL.disabled) + ' · ' : '')
+        + L(CUST_LBL.compiled) + hookText;
+    }
+    updateStatus();
+    return card;
+  }
+
+  function fillCustomPanel(p) {
+    const pz = state.puzzle;
+    pz.customRules = pz.customRules || [];
+    p.appendChild(btn(CUST_LBL.docs, { secondary: true, onClick: openCustomDocs }));
+    p.appendChild(btn(CUST_LBL.newRule, {
+      onClick: () => {
+        pz.customRules.push({ id: customRuleId(), name: '', code: CUSTOM_SKELETON, enabled: true });
+        fillToolPanel();
+        analyze();
+      },
+    }));
+    const enabled = pz.customRules.filter(r => r.enabled !== false).length;
+    const nRules = pz.customRules.length;
+    const stat = el('span', 'hint');
+    stat.textContent = L({ en: `Rules: ${nRules} (${enabled} enabled) — Ctrl+Enter re-solves.`,
+                           zh: `规则数：${nRules}（启用 ${enabled}）— Ctrl+Enter 立即重新求解。` });
+    p.appendChild(stat);
+    if (window.CustomRuleExamples && window.CustomRuleExamples.length) {
+      const row = el('div', 'cust-examples');
+      row.appendChild(el('span', null, L(CUST_LBL.examples)));
+      window.CustomRuleExamples.forEach(ex => {
+        const chip = el('button', 'chip');
+        chip.textContent = L(ex.name);
+        chip.title = L(ex.blurb);
+        chip.addEventListener('click', () => customInsertExample(ex));
+        row.appendChild(chip);
+      });
+      p.appendChild(row);
+    }
+    if (!pz.customRules.length) {
+      const no = el('div', 'hint');
+      no.style.flexBasis = '100%';
+      no.style.textAlign = 'center';
+      no.textContent = L(CUST_LBL.noRules);
+      p.appendChild(no);
+    }
+    pz.customRules.forEach(rule => p.appendChild(buildRuleCard(p, rule)));
+  }
+
+  /* API docs modal — content from custom-rule-docs.js + live example list. */
+  function openCustomDocs() {
+    closeCustomDocs();
+    const wrap = el('div', 'cust-docs-backdrop');
+    const panel = el('div', 'cust-docs');
+    const title = el('h2', null, L({ en: 'Custom Constraints — JS authoring guide', zh: '自定义限制 — JS 编写指南' }));
+    panel.appendChild(title);
+    const body = el('div', 'cust-docs-body');
+    (window.CustomRuleDocs || []).forEach(section => {
+      const h = el('h3', null, L(section.title));
+      body.appendChild(h);
+      (section.blocks || []).forEach(block => {
+        if (block.t === 'code') {
+          const pre = el('pre', 'cust-docs-code');
+          pre.appendChild(el('code', null, block.code));
+          body.appendChild(pre);
+        } else if (block.t === 'ul') {
+          const ul = el('ul');
+          (block.items || []).forEach(it => ul.appendChild(el('li', null, L(it))));
+          body.appendChild(ul);
+        } else {
+          body.appendChild(el('p', null, L(block)));
+        }
+      });
+    });
+    if (window.CustomRuleExamples && window.CustomRuleExamples.length) {
+      const h = el('h3', null, L({ en: '7 · Examples (insert them from the panel)', zh: '7 · 示例（可在面板中一键插入）' }));
+      body.appendChild(h);
+      window.CustomRuleExamples.forEach(ex => {
+        body.appendChild(el('h4', null, L(ex.name)));
+        body.appendChild(el('p', null, L(ex.blurb)));
+        const pre = el('pre', 'cust-docs-code');
+        pre.appendChild(el('code', null, ex.code));
+        body.appendChild(pre);
+      });
+    }
+    panel.appendChild(body);
+    const foot = el('div', 'cust-docs-foot');
+    foot.appendChild(btn({ en: 'Close', zh: '关闭' }, { secondary: true, onClick: closeCustomDocs }));
+    panel.appendChild(foot);
+    wrap.appendChild(panel);
+    wrap.addEventListener('mousedown', e => { if (e.target === wrap) closeCustomDocs(); });
+    document.body.appendChild(wrap);
+    customDocsEl = wrap;
+  }
+  function closeCustomDocs() {
+    if (customDocsEl && customDocsEl.parentNode) customDocsEl.parentNode.removeChild(customDocsEl);
+    customDocsEl = null;
+  }
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && customDocsEl) closeCustomDocs();
+  });
 
   function countExistingCells(pz) {
     const nRows = pz.rows != null ? pz.rows : pz.N;
@@ -761,24 +965,24 @@ window.SudokuApp = (function () {
       const dropFromCells = (arr) => arr.filter(entry => !entry.cells.includes(i));
       const dropFromLines = (arr) => arr.map(l => l.filter(x => x !== i)).filter(l => l.length >= 2);
       pz.cages = dropFromCells(pz.cages);
-      pz.thermos = dropFromLines(pz.thermos);
-      pz.whispers = dropFromLines(pz.whispers || []);
-      pz.regionSums = dropFromLines(pz.regionSums || []);
-      pz.modulars = dropFromLines(pz.modulars || []);
-      pz.renbans = dropFromLines(pz.renbans || []);
-      pz.palindromes = dropFromLines(pz.palindromes || []);
-      pz.entropics = dropFromLines(pz.entropics || []);
-      pz.parityLines = dropFromLines(pz.parityLines || []);
-      pz.betweenLines = dropFromLines(pz.betweenLines || []);
-      pz.slowThermos = dropFromLines(pz.slowThermos || []);
-      pz.lockoutLines = dropFromLines(pz.lockoutLines || []);
-      pz.sequenceLines = dropFromLines(pz.sequenceLines || []);
-      pz.kropki = (pz.kropki || []).filter(d => d.a !== i && d.b !== i);
+      pz.thermos     = dropFromLines(pz.thermos);
+      pz.whispers    = dropFromLines(pz.whispers   || []);
+      pz.regionSums  = dropFromLines(pz.regionSums || []);
+      pz.modulars    = dropFromLines(pz.modulars   || []);
+      pz.renbans     = dropFromLines(pz.renbans    || []);
+      pz.palindromes = dropFromLines(pz.palindromes|| []);
+      pz.entropics   = dropFromLines(pz.entropics  || []);
+      pz.parityLines = dropFromLines(pz.parityLines|| []);
+      pz.betweenLines= dropFromLines(pz.betweenLines|| []);
+      pz.slowThermos = dropFromLines(pz.slowThermos|| []);
+      pz.lockoutLines= dropFromLines(pz.lockoutLines|| []);
+      pz.sequenceLines=dropFromLines(pz.sequenceLines|| []);
+      pz.kropki  = (pz.kropki  || []).filter(d => d.a !== i && d.b !== i);
       pz.compare = (pz.compare || []).filter(d => d.a !== i && d.b !== i);
-      pz.xv = (pz.xv || []).filter(d => d.a !== i && d.b !== i);
-      pz.arrows = (pz.arrows || []).filter(a => !a.base.includes(i) && !a.path.includes(i));
-      pz.hitpoints = (pz.hitpoints || []).filter(h => h.cell !== i);
-      pz.extraRegions = (pz.extraRegions || []).map(er => ({ cells: er.cells.filter(x => x !== i) })).filter(er => er.cells.length);
+      pz.xv      = (pz.xv      || []).filter(d => d.a !== i && d.b !== i);
+      pz.arrows  = (pz.arrows  || []).filter(a => !a.base.includes(i) && !a.path.includes(i));
+      pz.hitpoints=(pz.hitpoints||[]).filter(h => h.cell !== i);
+      pz.extraRegions=(pz.extraRegions||[]).map(er => ({ cells: er.cells.filter(x => x !== i) })).filter(er => er.cells.length);
     }
     rebuild();
   }
@@ -842,7 +1046,7 @@ window.SudokuApp = (function () {
 
   function fillParityPanel(p) {
     [
-      { kind: 1, label: T.parOdd, sw: 'par-swatch odd' },
+      { kind: 1, label: T.parOdd,  sw: 'par-swatch odd'  },
       { kind: 2, label: T.parEven, sw: 'par-swatch even' },
     ].forEach(({ kind, label, sw }) => {
       p.appendChild(chipButton(state.parityKind === kind, sw, label, () => {
@@ -880,10 +1084,8 @@ window.SudokuApp = (function () {
     const draft = state.lineDraft;
     const field = LINE_FIELD[state.tool];
     p.appendChild(el('span', null,
-      L({
-        en: `Path length: ${draft.cells.length}`,
-        zh: `路径长度：${draft.cells.length}`
-      })));
+      L({ en: `Path length: ${draft.cells.length}`,
+          zh: `路径长度：${draft.cells.length}` })));
     p.appendChild(btn(T.finishLine, { onClick: finishLine }));
     if (draft.cells.length) {
       p.appendChild(btn(T.delSel, {
@@ -921,10 +1123,8 @@ window.SudokuApp = (function () {
       p.appendChild(chip);
     });
     p.appendChild(el('span', null,
-      L({
-        en: `Dots: ${state.puzzle.kropki.length}`,
-        zh: `点数：${state.puzzle.kropki.length}`
-      })));
+      L({ en: `Dots: ${state.puzzle.kropki.length}`,
+          zh: `点数：${state.puzzle.kropki.length}` })));
     if (state.puzzle.kropki.length) {
       p.appendChild(btn(T.clearDots, {
         secondary: true,
@@ -945,10 +1145,8 @@ window.SudokuApp = (function () {
   function fillArrowPanel(p) {
     const draft = state.arrowDraft;
     p.appendChild(el('span', null,
-      L({
-        en: `Phase: ${draft.phase === 0 ? 'Base pill' : 'Shaft'} — base=${draft.base.length}, shaft=${draft.path.length}`,
-        zh: `阶段：${draft.phase === 0 ? '圆圈胶囊' : '箭杆'} — 圆圈=${draft.base.length}，箭杆=${draft.path.length}`
-      })));
+      L({ en: `Phase: ${draft.phase === 0 ? 'Base pill' : 'Shaft'} — base=${draft.base.length}, shaft=${draft.path.length}`,
+          zh: `阶段：${draft.phase === 0 ? '圆圈胶囊' : '箭杆'} — 圆圈=${draft.base.length}，箭杆=${draft.path.length}` })));
     if (draft.phase === 0) {
       p.appendChild(btn({ en: 'Next: shaft', zh: '下一步：箭杆' }, {
         onClick: () => {
@@ -1020,10 +1218,8 @@ window.SudokuApp = (function () {
     input.addEventListener('input', () => { draft.digits = input.value; });
     p.appendChild(input);
     p.appendChild(el('span', null,
-      L({
-        en: `Placed: ${state.puzzle.quadruples.length}`,
-        zh: `已放置：${state.puzzle.quadruples.length}`
-      })));
+      L({ en: `Placed: ${state.puzzle.quadruples.length}`,
+          zh: `已放置：${state.puzzle.quadruples.length}` })));
     if (state.puzzle.quadruples.length) {
       p.appendChild(btn({ en: 'Delete last', zh: '删除最后一个' }, {
         secondary: true,
@@ -1076,34 +1272,52 @@ window.SudokuApp = (function () {
 
   /* ---------- Little Killer tool ---------- */
   const LK_SIDES = [
-    { key: 'top', en: 'Top', zh: '顶' },
+    { key: 'top',    en: 'Top',    zh: '顶' },
     { key: 'bottom', en: 'Bottom', zh: '底' },
-    { key: 'left', en: 'Left', zh: '左' },
-    { key: 'right', en: 'Right', zh: '右' },
+    { key: 'left',   en: 'Left',   zh: '左' },
+    { key: 'right',  en: 'Right',  zh: '右' },
+    /* Corner slots live one cell diagonally outside a grid vertex; they give
+       access to the corner-to-corner diagonals (main / anti diagonal). */
+    { key: 'tl',     en: 'Top-left corner',  zh: '左上角' },
+    { key: 'tr',     en: 'Top-right corner', zh: '右上角' },
+    { key: 'bl',     en: 'Bottom-left corner',  zh: '左下角' },
+    { key: 'br',     en: 'Bottom-right corner', zh: '右下角' },
   ];
   const LK_DIRS = [
     { key: 'dr', glyph: '↘', en: 'Down-Right', zh: '右下' },
-    { key: 'dl', glyph: '↙', en: 'Down-Left', zh: '左下' },
-    { key: 'ur', glyph: '↗', en: 'Up-Right', zh: '右上' },
-    { key: 'ul', glyph: '↖', en: 'Up-Left', zh: '左上' },
+    { key: 'dl', glyph: '↙', en: 'Down-Left',  zh: '左下' },
+    { key: 'ur', glyph: '↗', en: 'Up-Right',   zh: '右上' },
+    { key: 'ul', glyph: '↖', en: 'Up-Left',    zh: '左上' },
   ];
   /* Directions that go INTO the grid from each side. Corners further reduce
      this to a single direction (degenerate 1-cell diagonals are filtered out
      by checking diagCells length >= 2). */
   const LK_VALID_DIRS = {
-    top: ['dr', 'dl'],
+    top:    ['dr', 'dl'],
     bottom: ['ur', 'ul'],
-    left: ['dr', 'ur'],
-    right: ['dl', 'ul'],
+    left:   ['dr', 'ur'],
+    right:  ['dl', 'ul'],
   };
+  /* Corner slots: each has exactly one diagonal — the corner-to-corner line
+     of the grid (main diagonal 'tl'↔'br', anti diagonal 'tr'↔'bl'). */
+  const LK_CORNER_DIR = { tl: 'dr', tr: 'dl', bl: 'ur', br: 'ul' };
 
-  function lkDiagCells(side, idx, dir, N) {
+  function lkDiagCells(side, idx, dir /*, N kept for call-site compatibility */) {
     if (!self.LittleKillerHelpers) return [];
-    return self.LittleKillerHelpers.diagCells(side, idx, dir, N);
+    const pz = state.puzzle;
+    const N = pz.N;
+    const rows = pz.rows != null ? pz.rows : N;
+    const cols = pz.cols != null ? pz.cols : N;
+    const deleted = pz.deleted || null;
+    return self.LittleKillerHelpers.diagCells(side, idx | 0, dir, rows, cols, deleted);
   }
   /* Directions whose diagonal has ≥ 2 cells from (side, idx). Excludes the
      one-cell degenerate case at corners (e.g. top idx 0 direction 'dl'). */
   function lkDirsAt(side, idx, N) {
+    if (LK_CORNER_DIR[side]) {
+      const dir = LK_CORNER_DIR[side];
+      return lkDiagCells(side, 0, dir).length >= 2 ? [dir] : [];
+    }
     return LK_VALID_DIRS[side].filter(d => lkDiagCells(side, idx, d, N).length >= 2);
   }
   /* Return existing arrows anchored at (side, idx). */
@@ -1139,10 +1353,8 @@ window.SudokuApp = (function () {
 
     if (!sel) {
       p.appendChild(el('span', null,
-        L({
-          en: 'Click any outer edge cell to add or edit an arrow.',
-          zh: '点击网格外圈任一格以添加或编辑箭头。'
-        })));
+        L({ en: 'Click any outer edge cell to add or edit an arrow.',
+            zh: '点击网格外圈任一格以添加或编辑箭头。' })));
       p.appendChild(el('span', null,
         L({ en: `Arrows: ${list.length}`, zh: `箭头数：${list.length}` })));
       if (list.length) {
@@ -1172,11 +1384,11 @@ window.SudokuApp = (function () {
 
     const sideName = LK_SIDES.find(s => s.key === sel.side);
     const posN = (sel.idx | 0) + 1;
-    p.appendChild(el('span', null,
-      L({
-        en: `Anchor: ${sideName.en} #${posN}`,
-        zh: `锚点：${sideName.zh} 第 ${posN} 格`
-      })));
+    const anchorTxt = LK_CORNER_DIR[sel.side]
+      ? L({ en: `Anchor: ${sideName.en}`, zh: `锚点：${sideName.zh}` })
+      : L({ en: `Anchor: ${sideName.en} #${posN}`,
+            zh: `锚点：${sideName.zh} 第 ${posN} 格` });
+    p.appendChild(el('span', null, anchorTxt));
 
     const existing = lkArrowsAt(sel.side, sel.idx);
     if (existing.length) {
@@ -1257,28 +1469,22 @@ window.SudokuApp = (function () {
     if (!sel) return;
     const sum = Number(d.sum);
     if (!Number.isFinite(sum) || sum <= 0) {
-      state.lkNotice = L({
-        en: 'Enter a positive sum first.',
-        zh: '请先输入正整数总和。'
-      });
+      state.lkNotice = L({ en: 'Enter a positive sum first.',
+                            zh: '请先输入正整数总和。' });
       fillToolPanel();
       return;
     }
     const validDirs = lkDirsAt(sel.side, sel.idx, N);
     if (!validDirs.includes(d.dir)) {
-      state.lkNotice = L({
-        en: 'Pick a valid direction.',
-        zh: '请选择一个有效方向。'
-      });
+      state.lkNotice = L({ en: 'Pick a valid direction.',
+                            zh: '请选择一个有效方向。' });
       fillToolPanel();
       return;
     }
     const cells = lkDiagCells(sel.side, sel.idx, d.dir, N);
     if (cells.length < 2) {
-      state.lkNotice = L({
-        en: 'This direction has no diagonal.',
-        zh: '此方向没有有效对角线。'
-      });
+      state.lkNotice = L({ en: 'This direction has no diagonal.',
+                            zh: '此方向没有有效对角线。' });
       fillToolPanel();
       return;
     }
@@ -1287,10 +1493,14 @@ window.SudokuApp = (function () {
     const dup = lkFindByCells(cells);
     if (dup >= 0) {
       const other = state.puzzle.littleKillers[dup];
-      const sideName = LK_SIDES.find(s => s.key === other.side);
+      const sideName = LK_SIDES.find(s => s.key === other.side) || { en: other.side, zh: other.side };
+      const at = LK_CORNER_DIR[other.side]
+        ? L({ en: sideName.en, zh: sideName.zh })
+        : L({ en: `${sideName.en} #${(other.idx | 0) + 1}`,
+              zh: `${sideName.zh} 第 ${(other.idx | 0) + 1} 格` });
       state.lkNotice = L({
-        en: `Same diagonal already has an arrow (${sideName.en} #${(other.idx | 0) + 1}, sum ${other.sum}).`,
-        zh: `同一对角线已存在箭头（${sideName.zh} 第 ${(other.idx | 0) + 1} 格，总和 ${other.sum}）。`,
+        en: `Same diagonal already has an arrow (${at}, sum ${other.sum}).`,
+        zh: `同一对角线已存在箭头（${at}，总和 ${other.sum}）。`,
       });
       fillToolPanel();
       return;
@@ -1329,14 +1539,14 @@ window.SudokuApp = (function () {
 
   /* ---------- Hitpoint Arrow tool ---------- */
   const HITPOINT_DIRS = [
-    { bit: 0, glyph: '↑', en: 'N', zh: '北' },
-    { bit: 1, glyph: '↗', en: 'NE', zh: '东北' },
-    { bit: 2, glyph: '→', en: 'E', zh: '东' },
-    { bit: 3, glyph: '↘', en: 'SE', zh: '东南' },
-    { bit: 4, glyph: '↓', en: 'S', zh: '南' },
-    { bit: 5, glyph: '↙', en: 'SW', zh: '西南' },
-    { bit: 6, glyph: '←', en: 'W', zh: '西' },
-    { bit: 7, glyph: '↖', en: 'NW', zh: '西北' },
+    { bit: 0, glyph: '↑',  en: 'N',  zh: '北' },
+    { bit: 1, glyph: '↗',  en: 'NE', zh: '东北' },
+    { bit: 2, glyph: '→',  en: 'E',  zh: '东' },
+    { bit: 3, glyph: '↘',  en: 'SE', zh: '东南' },
+    { bit: 4, glyph: '↓',  en: 'S',  zh: '南' },
+    { bit: 5, glyph: '↙',  en: 'SW', zh: '西南' },
+    { bit: 6, glyph: '←',  en: 'W',  zh: '西' },
+    { bit: 7, glyph: '↖',  en: 'NW', zh: '西北' },
   ];
 
   function fillHitpointPanel(p) {
@@ -1506,10 +1716,8 @@ window.SudokuApp = (function () {
   function fillCagePanel(p) {
     const draft = state.cageDraft;
     const info = el('span', null,
-      L({
-        en: `Selected: ${draft.cells.length} cells`,
-        zh: `已选：${draft.cells.length} 格`
-      }));
+      L({ en: `Selected: ${draft.cells.length} cells`,
+          zh: `已选：${draft.cells.length} 格` }));
     p.appendChild(info);
     p.appendChild(el('span', null, L(T.sumLbl) + ':'));
     const sumIn = el('input');
@@ -1533,10 +1741,8 @@ window.SudokuApp = (function () {
   function fillThermoPanel(p) {
     const draft = state.thermoDraft;
     p.appendChild(el('span', null,
-      L({
-        en: `Path length: ${draft.cells.length}`,
-        zh: `路径长度：${draft.cells.length}`
-      })));
+      L({ en: `Path length: ${draft.cells.length}`,
+          zh: `路径长度：${draft.cells.length}` })));
     p.appendChild(btn(T.newTh, { onClick: finishThermo }));
     if (draft.cells.length) {
       p.appendChild(btn(T.delSel, {
@@ -1573,10 +1779,8 @@ window.SudokuApp = (function () {
     const N = state.puzzle.N;
     const draft = state.erDraft;
     p.appendChild(el('span', null,
-      L({
-        en: `Selected: ${draft.cells.length} cells`,
-        zh: `已选：${draft.cells.length} 格`
-      })));
+      L({ en: `Selected: ${draft.cells.length} cells`,
+          zh: `已选：${draft.cells.length} 格` })));
     /* Color picker for the next region to add. */
     p.appendChild(el('span', null, L({ en: 'Color', zh: '颜色' }) + ':'));
     for (let k = 0; k < Math.min(8, N); k++) {
@@ -1701,8 +1905,8 @@ window.SudokuApp = (function () {
   /* ---------- Grid + frame (with skyscraper edges) ---------- */
   function cellSize(N) {
     /* Shrink cells so 16×16 still fits comfortably. */
-    if (N <= 6) return 46;
-    if (N <= 9) return 40;
+    if (N <= 6)  return 46;
+    if (N <= 9)  return 40;
     if (N <= 12) return 32;
     return 26;
   }
@@ -1714,40 +1918,40 @@ window.SudokuApp = (function () {
     const nCols = pz.cols != null ? pz.cols : N;
     const size = cellSize(Math.max(nRows, nCols));
     const skyMode = state.tool === 'sky' ? 'sky'
-      : state.tool === 'sandwich' ? 'sandwich'
-        : state.tool === 'xsum' ? 'xsum'
-          : null;
+                  : state.tool === 'sandwich' ? 'sandwich'
+                  : state.tool === 'xsum' ? 'xsum'
+                  : null;
     const showLK = state.tool === 'littleKiller' ||
-      (state.puzzle.littleKillers && state.puzzle.littleKillers.length);
+                  (state.puzzle.littleKillers && state.puzzle.littleKillers.length);
     const edgeMode = skyMode || (showLK ? 'littleKiller' : null);
     const edge = edgeMode ? size : 0;
     const makeEdge = (side, idx) => {
       if (edgeMode === 'sandwich') return makeSandwich(side, idx);
-      if (edgeMode === 'sky') return makeSky(side, idx);
-      if (edgeMode === 'xsum') return makeXSum(side, idx);
+      if (edgeMode === 'sky')      return makeSky(side, idx);
+      if (edgeMode === 'xsum')     return makeXSum(side, idx);
       return makeLK(side, idx);
     };
     const frame = el('div', 'sudoku-frame');
     frame.style.setProperty('--cell-size', size + 'px');
     frame.style.gridTemplateColumns = `${edge}px repeat(${nCols}, ${size}px) ${edge}px`;
-    frame.style.gridTemplateRows = `${edge}px repeat(${nRows}, ${size}px) ${edge}px`;
+    frame.style.gridTemplateRows    = `${edge}px repeat(${nRows}, ${size}px) ${edge}px`;
     state.dom.frame = frame;
     state.dom.cellSize = size;
     state.dom.hasEdge = !!edgeMode;
 
     if (edgeMode) {
       /* Top edge: corner + nCols top clues + corner */
-      frame.appendChild(el('div'));
+      frame.appendChild(lkCornerSlot(edgeMode, 'tl'));
       for (let c = 0; c < nCols; c++) frame.appendChild(makeEdge('top', c));
-      frame.appendChild(el('div'));
+      frame.appendChild(lkCornerSlot(edgeMode, 'tr'));
     }
 
     const grid = el('div', 'sudoku-grid');
     grid.style.setProperty('--cell-size', size + 'px');
     grid.style.gridTemplateColumns = `repeat(${nCols}, ${size}px)`;
-    grid.style.gridTemplateRows = `repeat(${nRows}, ${size}px)`;
+    grid.style.gridTemplateRows    = `repeat(${nRows}, ${size}px)`;
     grid.style.gridColumn = `2 / span ${nCols}`;
-    grid.style.gridRow = `2 / span ${nRows}`;
+    grid.style.gridRow    = `2 / span ${nRows}`;
 
     if (edgeMode) {
       for (let r = 0; r < nRows; r++) {
@@ -1767,9 +1971,11 @@ window.SudokuApp = (function () {
     state.dom.grid = grid;
 
     if (edgeMode) {
-      const brow = el('div');
-      brow.style.gridColumn = '1';
-      brow.style.gridRow = (nRows + 2);
+      const brow = lkCornerSlot(edgeMode, 'bl');
+      if (edgeMode !== 'littleKiller') {
+        brow.style.gridColumn = '1';
+        brow.style.gridRow = (nRows + 2);
+      }
       frame.appendChild(brow);
       for (let c = 0; c < nCols; c++) {
         const b = makeEdge('bottom', c);
@@ -1777,9 +1983,11 @@ window.SudokuApp = (function () {
         b.style.gridRow = (nRows + 2);
         frame.appendChild(b);
       }
-      const brow2 = el('div');
-      brow2.style.gridColumn = (nCols + 2);
-      brow2.style.gridRow = (nRows + 2);
+      const brow2 = lkCornerSlot(edgeMode, 'br');
+      if (edgeMode !== 'littleKiller') {
+        brow2.style.gridColumn = (nCols + 2);
+        brow2.style.gridRow = (nRows + 2);
+      }
       frame.appendChild(brow2);
     }
 
@@ -1804,8 +2012,8 @@ window.SudokuApp = (function () {
     const arr = state.puzzle[kind][side];
     const val = arr[idx];
     const cls = kind === 'sandwich' ? 'sandwich-cell'
-      : kind === 'xsum' ? 'xsum-cell'
-        : 'sky-cell';
+              : kind === 'xsum'     ? 'xsum-cell'
+              : 'sky-cell';
     const cell = el('input', cls + (val ? ' filled' : ''));
     cell.type = 'text';
     cell.autocomplete = 'off';
@@ -1815,26 +2023,20 @@ window.SudokuApp = (function () {
     const maxSandwich = Math.max(0, (N * (N + 1)) / 2 - 1 - N);  /* sum of 2..N-1 */
     const maxXSum = (N * (N + 1)) / 2;                           /* sum of 1..N */
     cell.title = kind === 'sky'
-      ? L({
-        en: `Skyscrapers visible 1..${N} (blank clears)`,
-        zh: `可见摩天楼数 1..${N}（留空清除）`
-      })
+      ? L({ en: `Skyscrapers visible 1..${N} (blank clears)`,
+            zh: `可见摩天楼数 1..${N}（留空清除）` })
       : kind === 'xsum'
-        ? L({
-          en: `X-sum: first digit X, sum of first X digits 1..${maxXSum}`,
-          zh: `X 和：首格为 X，前 X 个数字之和 1..${maxXSum}`
-        })
-        : L({
-          en: `Sandwich sum 0..${maxSandwich} between 1 and ${N}`,
-          zh: `1 与 ${N} 之间的数字之和 0..${maxSandwich}`
-        });
+      ? L({ en: `X-sum: first digit X, sum of first X digits 1..${maxXSum}`,
+            zh: `X 和：首格为 X，前 X 个数字之和 1..${maxXSum}` })
+      : L({ en: `Sandwich sum 0..${maxSandwich} between 1 and ${N}`,
+            zh: `1 与 ${N} 之间的数字之和 0..${maxSandwich}` });
     if (side === 'top') {
       cell.style.gridColumn = (idx + 2);
       cell.style.gridRow = '1';
     }
     const maxVal = kind === 'sky' ? N
-      : kind === 'xsum' ? maxXSum
-        : maxSandwich;
+                 : kind === 'xsum' ? maxXSum
+                 : maxSandwich;
     cell.addEventListener('focus', () => cell.select());
     cell.addEventListener('input', () => {
       const digits = cell.value.replace(/[^0-9]/g, '');
@@ -1889,6 +2091,45 @@ window.SudokuApp = (function () {
       btnEl.addEventListener('click', () => selectLKAnchor(side, idx));
     }
     return btnEl;
+  }
+
+  /* Corner slot of the Little Killer outer band (one cell diagonally outside
+     a grid vertex). It exposes the corner-to-corner diagonal (main diagonal
+     at 'tl'/'br', anti diagonal at 'tr'/'bl') as a single clickable anchor. */
+  function makeLKCorner(corner) {
+    const active = state.tool === 'littleKiller';
+    const dirs = lkDirsAt(corner, 0, state.puzzle.N);
+    const clickable = active && dirs.length > 0;
+    const btnEl = el(clickable ? 'button' : 'div', 'lk-edge lk-corner');
+    if (clickable) btnEl.type = 'button';
+    if (active && !dirs.length) btnEl.classList.add('disabled');
+    if (clickable) btnEl.classList.add('clickable');
+    const sel = state.lkSelected;
+    if (sel && sel.side === corner && sel.idx === 0) btnEl.classList.add('selected');
+    if (lkArrowsAt(corner, 0).length) btnEl.classList.add('has-arrow');
+    /* The corner spans one grid row/column outside the grid (frame coords
+       start at 1): top-left (1,1), top-right (nCols+2,1), etc. */
+    const N = state.puzzle.N;
+    const nRows = state.puzzle.rows != null ? state.puzzle.rows : N;
+    const nCols = state.puzzle.cols != null ? state.puzzle.cols : N;
+    const col = (corner === 'tl' || corner === 'bl') ? 1 : (nCols + 2);
+    const row = (corner === 'tl' || corner === 'tr') ? 1 : (nRows + 2);
+    btnEl.style.gridColumn = String(col);
+    btnEl.style.gridRow = String(row);
+    const name = LK_SIDES.find(s => s.key === corner);
+    if (clickable) {
+      btnEl.title = L({
+        en: `Little Killer along the ${name ? name.en : corner} diagonal — click to add or edit.`,
+        zh: `${name ? name.zh : corner}对角线上的小杀手箭头 — 点击添加或编辑。`,
+      });
+      btnEl.addEventListener('click', () => selectLKAnchor(corner, 0));
+    }
+    return btnEl;
+  }
+  /* Corner element of the outer band: an LK corner slot in Little Killer
+     mode, an empty spacer in every other edge-clue mode. */
+  function lkCornerSlot(edgeMode, corner) {
+    return (edgeMode === 'littleKiller') ? makeLKCorner(corner) : el('div');
   }
 
   function selectLKAnchor(side, idx) {
@@ -1962,10 +2203,10 @@ window.SudokuApp = (function () {
       const r = (i / nCols) | 0, c = i % nCols;
       const myReg = (deleted && deleted[i]) ? DELETED_REGION : regions[i];
       const addBorders = (elt) => {
-        const t = borderClass(myReg, regionOf(r - 1, c), 't'); if (t) elt.classList.add(t);
-        const l = borderClass(myReg, regionOf(r, c - 1), 'l'); if (l) elt.classList.add(l);
-        const b = borderClass(myReg, regionOf(r + 1, c), 'b'); if (b) elt.classList.add(b);
-        const rr2 = borderClass(myReg, regionOf(r, c + 1), 'r'); if (rr2) elt.classList.add(rr2);
+        const t  = borderClass(myReg, regionOf(r-1, c), 't'); if (t)  elt.classList.add(t);
+        const l  = borderClass(myReg, regionOf(r, c-1), 'l'); if (l)  elt.classList.add(l);
+        const b  = borderClass(myReg, regionOf(r+1, c), 'b'); if (b)  elt.classList.add(b);
+        const rr2 = borderClass(myReg, regionOf(r, c+1), 'r'); if (rr2) elt.classList.add(rr2);
       };
       if (deleted && deleted[i]) {
         /* Deleted cell: a non-interactive spacer so the grid layout stays
@@ -1993,14 +2234,14 @@ window.SudokuApp = (function () {
       } else {
         /* Internal box separators (1.5px on each side, meet at 3px). */
         if ((c + 1) % boxC === 0 && c !== nCols - 1) input.classList.add('bx-r');
-        if (c > 0 && c % boxC === 0) input.classList.add('bx-l');
+        if (c > 0 && c % boxC === 0)                 input.classList.add('bx-l');
         if ((r + 1) % boxR === 0 && r !== nRows - 1) input.classList.add('bx-b');
-        if (r > 0 && r % boxR === 0) input.classList.add('bx-t');
+        if (r > 0 && r % boxR === 0)                 input.classList.add('bx-t');
         /* Outer perimeter for classic grids: cells on the edge get the
            full 3px outer border so the shape's outline matches internal
            box borders in width. */
-        if (r === 0) input.classList.add('bx-t-outer');
-        if (c === 0) input.classList.add('bx-l-outer');
+        if (r === 0)         input.classList.add('bx-t-outer');
+        if (c === 0)         input.classList.add('bx-l-outer');
         if (r === nRows - 1) input.classList.add('bx-b-outer');
         if (c === nCols - 1) input.classList.add('bx-r-outer');
       }
@@ -2130,9 +2371,9 @@ window.SudokuApp = (function () {
     else if (state.tool === 'arrow') selCells = state.arrowDraft.base.concat(state.arrowDraft.path);
     applySelEdges(selCells);
     const markFirst = (idx) => { const c = state.dom.cells[idx]; if (c) c.classList.add('kropki-first'); };
-    if (state.tool === 'kropki' && state.kropkiFirst >= 0) markFirst(state.kropkiFirst);
+    if (state.tool === 'kropki'  && state.kropkiFirst  >= 0) markFirst(state.kropkiFirst);
     if (state.tool === 'compare' && state.compareFirst >= 0) markFirst(state.compareFirst);
-    if (state.tool === 'xv' && state.xvFirst >= 0) markFirst(state.xvFirst);
+    if (state.tool === 'xv'      && state.xvFirst      >= 0) markFirst(state.xvFirst);
   }
 
   /* Given a set of selected cell indices, mark each cell with `.sel` plus
@@ -2147,9 +2388,9 @@ window.SudokuApp = (function () {
       const cell = state.dom.cells[i]; if (!cell) continue;
       const r = (i / N) | 0, c = i % N;
       cell.classList.add('sel');
-      if (r === 0 || !inSet[i - N]) cell.classList.add('sel-t');
+      if (r === 0     || !inSet[i - N]) cell.classList.add('sel-t');
       if (r === N - 1 || !inSet[i + N]) cell.classList.add('sel-b');
-      if (c === 0 || !inSet[i - 1]) cell.classList.add('sel-l');
+      if (c === 0     || !inSet[i - 1]) cell.classList.add('sel-l');
       if (c === N - 1 || !inSet[i + 1]) cell.classList.add('sel-r');
     }
   }
@@ -2227,7 +2468,7 @@ window.SudokuApp = (function () {
     for (let vr = 1; vr < N; vr++) {
       for (let vc = 1; vc < N; vc++) {
         const A = has(vr - 1, vc - 1), B = has(vr - 1, vc);
-        const C = has(vr, vc - 1), D = has(vr, vc);
+        const C = has(vr, vc - 1),     D = has(vr, vc);
         const count = A + B + C + D;
         if (count !== 3) continue;
         const X = vc * S, Y = vr * S;
@@ -2314,13 +2555,13 @@ window.SudokuApp = (function () {
   /* Type-tag glyph for each line class (single character near the line's
      first cell so overlapping lines stay identifiable). */
   const LINE_TAG_GLYPH = {
-    whisper: 'W',
+    whisper:   'W',
     regionsum: 'Σ',
-    modular: 'M',
-    renban: 'R',
-    palindrome: 'P',
-    entropic: 'E',
-    parityline: '±',
+    modular:   'M',
+    renban:    'R',
+    palindrome:'P',
+    entropic:  'E',
+    parityline:'±',
   };
 
   function drawLines() {
@@ -2362,12 +2603,12 @@ window.SudokuApp = (function () {
       svg.appendChild(t);
     };
 
-    whispers.forEach(l => drawOne('whisper', l, false));
-    regionSums.forEach(l => drawOne('regionsum', l, false));
-    modulars.forEach(l => drawOne('modular', l, false));
-    renbans.forEach(l => drawOne('renban', l, false));
+    whispers   .forEach(l => drawOne('whisper',    l, false));
+    regionSums .forEach(l => drawOne('regionsum',  l, false));
+    modulars   .forEach(l => drawOne('modular',    l, false));
+    renbans    .forEach(l => drawOne('renban',     l, false));
     palindromes.forEach(l => drawOne('palindrome', l, false));
-    entropics.forEach(l => drawOne('entropic', l, false));
+    entropics  .forEach(l => drawOne('entropic',   l, false));
     parityLines.forEach(l => drawOne('parityline', l, false));
 
     /* Preview the current draft in its own line class so users see which
@@ -2412,7 +2653,7 @@ window.SudokuApp = (function () {
         rect.setAttribute('class', 'base');
         rect.setAttribute('x', c0 * size + pad);
         rect.setAttribute('y', r0 * size + pad);
-        rect.setAttribute('width', (c1 - c0 + 1) * size - pad * 2);
+        rect.setAttribute('width',  (c1 - c0 + 1) * size - pad * 2);
         rect.setAttribute('height', (r1 - r0 + 1) * size - pad * 2);
         rect.setAttribute('rx', size * 0.42);
         rect.setAttribute('ry', size * 0.42);
@@ -2617,7 +2858,7 @@ window.SudokuApp = (function () {
          (bbox x∈[-w/2, w/2]) so that translate(cx, cy) actually puts the
          mark's centre on the shared-edge midpoint. */
       const path = document.createElementNS('http://www.w3.org/2000/svg', 'polyline');
-      path.setAttribute('points', `${-w / 2},${-h} ${w / 2},0 ${-w / 2},${h}`);
+      path.setAttribute('points', `${-w/2},${-h} ${w/2},0 ${-w/2},${h}`);
       path.setAttribute('stroke-width', Math.max(1.5, size * 0.06));
       g.appendChild(path);
       svg.appendChild(g);
@@ -2691,10 +2932,10 @@ window.SudokuApp = (function () {
       /* Returns the entry-cell centre + a unit vector pointing INTO the grid
          (opposite of the arrow's tail direction). */
       let ax, ay, ux, uy;
-      if (side === 'top') { ax = (idx + 0.5) * size; ay = 0; ux = 0; uy = 1; }
-      else if (side === 'bottom') { ax = (idx + 0.5) * size; ay = total; ux = 0; uy = -1; }
-      else if (side === 'left') { ax = 0; ay = (idx + 0.5) * size; ux = 1; uy = 0; }
-      else { ax = total; ay = (idx + 0.5) * size; ux = -1; uy = 0; }
+      if (side === 'top')    { ax = (idx + 0.5) * size; ay = 0;          ux = 0;  uy = 1; }
+      else if (side === 'bottom') { ax = (idx + 0.5) * size; ay = total; ux = 0;  uy = -1; }
+      else if (side === 'left')   { ax = 0; ay = (idx + 0.5) * size;     ux = 1;  uy = 0; }
+      else                        { ax = total; ay = (idx + 0.5) * size; ux = -1; uy = 0; }
       return { ax, ay, ux, uy };
     }
     function dirVec(dir) {
@@ -2706,18 +2947,30 @@ window.SudokuApp = (function () {
     }
 
     lks.forEach((lk, li) => {
-      const { ax, ay, ux, uy } = anchor(lk.side, lk.idx);
-      /* Tail anchor: OUT pixels outside the grid, in the opposite direction. */
-      const tailX = ax - ux * OUT;
-      const tailY = ay - uy * OUT;
       /* Arrow direction (into grid). Normalize for unit vector. */
       const [dx, dy] = dirVec(lk.dir);
       const len = Math.hypot(dx, dy);
       const nx = dx / len, ny = dy / len;
-      /* Segment: from tailX,tailY toward (tailX + nx*L, tailY + ny*L). */
-      const L = size * 0.5;
-      const tipX = tailX + nx * L;
-      const tipY = tailY + ny * L;
+      let tailX, tailY, tipX, tipY;
+      if (LK_CORNER_DIR[lk.side]) {
+        /* Corner anchor — the arrow sits diagonally outside a grid vertex and
+           points at the corner-to-corner diagonal (main / anti). The head tip
+           lands on the vertex itself, keeping the digit area clear. */
+        const vx = (lk.side === 'tl' || lk.side === 'bl') ? 0 : total;
+        const vy = (lk.side === 'tl' || lk.side === 'tr') ? 0 : total;
+        tailX = vx - nx * OUT;
+        tailY = vy - ny * OUT;
+        tipX = vx;
+        tipY = vy;
+      } else {
+        const { ax, ay, ux, uy } = anchor(lk.side, lk.idx);
+        /* Tail anchor: OUT pixels outside the grid, in the opposite direction. */
+        tailX = ax - ux * OUT;
+        tailY = ay - uy * OUT;
+        const L = size * 0.5;
+        tipX = tailX + nx * L;
+        tipY = tailY + ny * L;
+      }
       const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
       g.setAttribute('class', 'lk-arrow');
       g.dataset.index = String(li);
@@ -2796,7 +3049,7 @@ window.SudokuApp = (function () {
     svg.setAttribute('viewBox', `0 0 ${total} ${total}`);
 
     const DIRS = self.HitpointHelpers ? self.HitpointHelpers.DIRS : [
-      [-1, 0], [-1, 1], [0, 1], [1, 1], [1, 0], [1, -1], [0, -1], [-1, -1],
+      [-1,0],[-1,1],[0,1],[1,1],[1,0],[1,-1],[0,-1],[-1,-1],
     ];
 
     for (const hp of list) {
@@ -2975,7 +3228,7 @@ window.SudokuApp = (function () {
     const ls = lockoutLines || [];
     const ss = sequenceLines || [];
     if (!bs.length && !ls.length && !ss.length &&
-      !['between', 'lockout', 'sequence'].includes(state.tool)) return;
+        !['between', 'lockout', 'sequence'].includes(state.tool)) return;
 
     const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
     svg.setAttribute('class', 'blk-svg');
@@ -3013,7 +3266,7 @@ window.SudokuApp = (function () {
             d.setAttribute('class', 'blk-cap lockout');
             const R = size * 0.28;
             d.setAttribute('points',
-              `${p[0]},${p[1] - R} ${p[0] + R},${p[1]} ${p[0]},${p[1] + R} ${p[0] - R},${p[1]}`);
+              `${p[0]},${p[1]-R} ${p[0]+R},${p[1]} ${p[0]},${p[1]+R} ${p[0]-R},${p[1]}`);
             svg.appendChild(d);
           }
         }
@@ -3024,8 +3277,8 @@ window.SudokuApp = (function () {
     ls.forEach(l => drawLine(l, 'lockout', false));
     ss.forEach(l => drawLine(l, 'sequence', false));
     /* Preview for in-progress draft. */
-    if (state.tool === 'between') drawLine(state.lineDraft.cells, 'between', true);
-    if (state.tool === 'lockout') drawLine(state.lineDraft.cells, 'lockout', true);
+    if (state.tool === 'between')  drawLine(state.lineDraft.cells, 'between',  true);
+    if (state.tool === 'lockout')  drawLine(state.lineDraft.cells, 'lockout',  true);
     if (state.tool === 'sequence') drawLine(state.lineDraft.cells, 'sequence', true);
 
     grid.appendChild(svg);
@@ -3149,9 +3402,9 @@ window.SudokuApp = (function () {
       const nCols = pz.cols != null ? pz.cols : N;
       const focusIf = (target) => { const c = state.dom.cells[target]; if (c) c.focus(); };
       if (e.key === 'ArrowRight' && idx % nCols < nCols - 1) { e.preventDefault(); focusIf(idx + 1); return; }
-      if (e.key === 'ArrowLeft' && idx % nCols > 0) { e.preventDefault(); focusIf(idx - 1); return; }
-      if (e.key === 'ArrowDown' && idx < nCols * (nRows - 1)) { e.preventDefault(); focusIf(idx + nCols); return; }
-      if (e.key === 'ArrowUp' && idx >= nCols) { e.preventDefault(); focusIf(idx - nCols); return; }
+      if (e.key === 'ArrowLeft'  && idx % nCols > 0)         { e.preventDefault(); focusIf(idx - 1); return; }
+      if (e.key === 'ArrowDown'  && idx < nCols * (nRows - 1)) { e.preventDefault(); focusIf(idx + nCols); return; }
+      if (e.key === 'ArrowUp'    && idx >= nCols)              { e.preventDefault(); focusIf(idx - nCols); return; }
       if (state.tool !== 'digit') { e.preventDefault(); return; }
       if (e.key === 'Backspace' || e.key === 'Delete') {
         e.preventDefault();
@@ -3221,9 +3474,9 @@ window.SudokuApp = (function () {
     const theme = AppTheme.get();
     const touch = [i];
     const r = (i / nCols) | 0, c = i % nCols;
-    if (r > 0) touch.push(i - nCols);
+    if (r > 0)         touch.push(i - nCols);
     if (r < nRows - 1) touch.push(i + nCols);
-    if (c > 0) touch.push(i - 1);
+    if (c > 0)         touch.push(i - 1);
     if (c < nCols - 1) touch.push(i + 1);
     /* Neighbour "region id" for border-comparison purposes: out-of-grid
        and deleted cells count as "outside" (a distinct id) so an unassigned
@@ -3237,8 +3490,8 @@ window.SudokuApp = (function () {
     };
     for (const k of touch) {
       const cell = state.dom.cells[k]; if (!cell) continue;
-      cell.classList.remove('bx-t', 'bx-b', 'bx-l', 'bx-r',
-        'bx-t-outer', 'bx-b-outer', 'bx-l-outer', 'bx-r-outer');
+      cell.classList.remove('bx-t','bx-b','bx-l','bx-r',
+                            'bx-t-outer','bx-b-outer','bx-l-outer','bx-r-outer');
       const kr = (k / nCols) | 0, kc = k % nCols;
       cell.style.setProperty('--region-bg', p.regions[k] >= 0 ? regionColor(p.regions[k], theme) : 'transparent');
       /* Match the border-decision from buildCells so incremental repaints
@@ -3260,17 +3513,17 @@ window.SudokuApp = (function () {
         return 'bx-' + side;
       };
       if (jig) {
-        const tt = chooseSide(kr - 1, kc, 't'); if (tt) cell.classList.add(tt);
-        const ll = chooseSide(kr, kc - 1, 'l'); if (ll) cell.classList.add(ll);
-        const bb = chooseSide(kr + 1, kc, 'b'); if (bb) cell.classList.add(bb);
-        const rr2 = chooseSide(kr, kc + 1, 'r'); if (rr2) cell.classList.add(rr2);
+        const tt = chooseSide(kr-1, kc, 't'); if (tt) cell.classList.add(tt);
+        const ll = chooseSide(kr, kc-1, 'l'); if (ll) cell.classList.add(ll);
+        const bb = chooseSide(kr+1, kc, 'b'); if (bb) cell.classList.add(bb);
+        const rr2 = chooseSide(kr, kc+1, 'r'); if (rr2) cell.classList.add(rr2);
       } else {
         if ((kc + 1) % p.boxC === 0 && kc !== nCols - 1) cell.classList.add('bx-r');
-        if (kc > 0 && kc % p.boxC === 0) cell.classList.add('bx-l');
+        if (kc > 0 && kc % p.boxC === 0)                 cell.classList.add('bx-l');
         if ((kr + 1) % p.boxR === 0 && kr !== nRows - 1) cell.classList.add('bx-b');
-        if (kr > 0 && kr % p.boxR === 0) cell.classList.add('bx-t');
-        if (kr === 0) cell.classList.add('bx-t-outer');
-        if (kc === 0) cell.classList.add('bx-l-outer');
+        if (kr > 0 && kr % p.boxR === 0)                 cell.classList.add('bx-t');
+        if (kr === 0)         cell.classList.add('bx-t-outer');
+        if (kc === 0)         cell.classList.add('bx-l-outer');
         if (kr === nRows - 1) cell.classList.add('bx-b-outer');
         if (kc === nCols - 1) cell.classList.add('bx-r-outer');
       }
@@ -3430,7 +3683,7 @@ window.SudokuApp = (function () {
      Returns nothing; mutates state and rebuilds. */
   function handleEdgePairClick(i, listKey, firstKey, kindKey, directed, redraw) {
     if (state[firstKey] === -1) { state[firstKey] = i; rebuild(); return; }
-    if (state[firstKey] === i) { state[firstKey] = -1; rebuild(); return; }
+    if (state[firstKey] === i)  { state[firstKey] = -1; rebuild(); return; }
     const N = state.puzzle.N;
     const a0 = state[firstKey], b0 = i;
     const dr = Math.abs(((a0 / N) | 0) - ((b0 / N) | 0));
@@ -3460,7 +3713,7 @@ window.SudokuApp = (function () {
   }
 
   function handleCompareClick(i) { handleEdgePairClick(i, 'compare', 'compareFirst', 'compareKind', true); }
-  function handleXVClick(i) { handleEdgePairClick(i, 'xv', 'xvFirst', 'xvKind', false); }
+  function handleXVClick(i)      { handleEdgePairClick(i, 'xv',      'xvFirst',      'xvKind',      false); }
 
   /* Spectradoku brush: assign the currently-selected color to a cell.
      Clicking a cell that already holds the same color clears it. Live-updates
@@ -3584,21 +3837,26 @@ window.SudokuApp = (function () {
     state.dom.cells.forEach(c => { if (!c) return; c.classList.remove('error'); c.placeholder = ''; c.classList.remove('hint-only'); });
 
     const conflicts = Core.findConflicts(state.puzzle);
-    if (conflicts.size > 0) {
+    /* User-authored JS rules add their own conflicts + blocking messages
+       (compile errors, runtime exceptions, completed-grid violations). */
+    const customRes = Core.findCustomConflicts(state.puzzle);
+    (customRes.conflicts || []).forEach(i => conflicts.add(i));
+    const customMsgs = customRes.messages || [];
+
+    if (conflicts.size > 0 || customMsgs.length) {
       conflicts.forEach(i => { const c = state.dom.cells[i]; if (c) c.classList.add('error'); });
-      setStatus(L({
-        en: `Conflict: ${conflicts.size} cells clash.`,
-        zh: `冲突：${conflicts.size} 个单元格重复。`
-      }), 'err');
+      const msg = customMsgs.length
+        ? customMsgs.join(' · ')
+        : L({ en: `Conflict: ${conflicts.size} cells clash.`,
+              zh: `冲突：${conflicts.size} 个单元格重复。` });
+      setStatus(msg, 'err');
       updateNav();
       return;
     }
 
     if (!state.liveSolve) {
-      setStatus(L({
-        en: 'Live solve off — press Solve to compute.',
-        zh: '实时求解关闭 — 按"求解"计算。'
-      }));
+      setStatus(L({ en: 'Live solve off — press Solve to compute.',
+                    zh: '实时求解关闭 — 按"求解"计算。' }));
       updateNav();
       return;
     }
@@ -3607,7 +3865,7 @@ window.SudokuApp = (function () {
        usefully. Ask for at least one clue or one variant constraint. */
     const hasGivens = Array.prototype.some.call(state.puzzle.values, v => !!v);
     const p = state.puzzle;
-    const anyEdge = (obj) => ['top', 'bottom', 'left', 'right']
+    const anyEdge = (obj) => ['top','bottom','left','right']
       .some(s => Array.prototype.some.call(obj[s], v => !!v));
     const hasVariant = p.cages.length || p.thermos.length ||
       (p.whispers && p.whispers.length) ||
@@ -3634,15 +3892,14 @@ window.SudokuApp = (function () {
       (p.lockoutLines && p.lockoutLines.length) ||
       (p.sequenceLines && p.sequenceLines.length) ||
       (p.countCircles && Array.prototype.some.call(p.countCircles, v => !!v)) ||
+      (p.customRules && p.customRules.some(r => r && r.code && r.enabled !== false)) ||
       p.flags.diagonal || p.flags.antiKnight || p.flags.antiKing || p.flags.antiConsecutive || p.flags.disjoint ||
       hasCustomRegions() ||
       anyEdge(p.sky) || anyEdge(p.sandwich) ||
       (p.xsum && anyEdge(p.xsum));
     if (!hasGivens && !hasVariant) {
-      setStatus(L({
-        en: 'Add a given digit or a constraint to solve.',
-        zh: '请输入至少一个已知数字或添加一个约束。'
-      }));
+      setStatus(L({ en: 'Add a given digit or a constraint to solve.',
+                    zh: '请输入至少一个已知数字或添加一个约束。' }));
       updateNav();
       return;
     }
@@ -3669,16 +3926,14 @@ window.SudokuApp = (function () {
   function spawnSolver() {
     solver = new Worker('solver-worker.js');
     solver.onmessage = onSolverMessage;
-    solver.onerror = e => {
+    solver.onerror   = e => {
       /* Worker crashed — surface it, then let the next request lazily
          respawn. Don't try to recover this specific solve. */
       console.error('solver-worker error', e);
       solverBusy = false;
       solver = null;
-      setStatus(L({
-        en: 'Solver crashed — please try again.',
-        zh: '求解器崩溃 — 请再试一次。'
-      }), 'err');
+      setStatus(L({ en: 'Solver crashed — please try again.',
+                    zh: '求解器崩溃 — 请再试一次。' }), 'err');
     };
   }
 
@@ -3707,23 +3962,35 @@ window.SudokuApp = (function () {
     if (data.id !== solverActiveId) return;   /* stale response, ignore */
     solverBusy = false;
     if (data.error) {
-      setStatus(L({
-        en: 'Solver error — see console.',
-        zh: '求解器出错 — 详见控制台。'
-      }), 'err');
+      /* A custom rule that throws inside the solver aborts with a named
+         error — surface it directly instead of hiding it in the console. */
+      if (/custom rule/i.test(data.error)) {
+        setStatus(L({ en: 'Custom rule error: ', zh: '自定义规则错误：' }) + String(data.error).slice(0, 320), 'err');
+      } else {
+        setStatus(L({ en: 'Solver error — see console.',
+                      zh: '求解器出错 — 详见控制台。' }), 'err');
+      }
       console.error('solver-worker:', data.error);
       return;
     }
     if (data.invalidRegions) {
-      setStatus(L({
-        en: 'Regions are incomplete — every region needs exactly N cells.',
-        zh: '宫格不完整 — 每个宫格必须恰好包含 N 格。'
-      }), 'err');
+      setStatus(L({ en: 'Regions are incomplete — every region needs exactly N cells.',
+                    zh: '宫格不完整 — 每个宫格必须恰好包含 N 格。' }), 'err');
       return;
     }
     state.solutions = data.solutions;
     state.reachedCap = data.reachedCap;
     state.solutionIdx = 0;
+    /* A board-level custom rule (valid only) stopped the search after the
+       wall-clock budget — no completion satisfied it in time. */
+    if (data.customTimeout && !data.solutions.length) {
+      setStatus(L({
+        en: 'Stopped: the custom rule rejected every completed grid for ~1.5 s — add more givens or a canPlace hook to prune.',
+        zh: '已停止：自定义规则在约 1.5 秒内拒绝了所有完整盘面 — 请补充已知数或添加 canPlace 钩子进行剪枝。',
+      }), 'err');
+      updateNav();
+      return;
+    }
     renderSolution(data.dt);
     updateNav();
   }
@@ -3779,10 +4046,8 @@ window.SudokuApp = (function () {
     const total = state.solutions.length;
     const totalLabel = state.reachedCap ? '200+' : String(total);
     if (total === 1) {
-      setStatus(L({
-        en: `1 solution (${elapsedMs} ms).`,
-        zh: `1 种解（${elapsedMs} ms）。`
-      }), 'ok');
+      setStatus(L({ en: `1 solution (${elapsedMs} ms).`,
+                    zh: `1 种解（${elapsedMs} ms）。` }), 'ok');
     } else {
       setStatus(L({
         en: `Solution ${state.solutionIdx + 1} of ${totalLabel} (${elapsedMs} ms).`,
@@ -3868,7 +4133,7 @@ window.SudokuApp = (function () {
       if (state.cageDrag) endCageDrag();
       if (state.regionDrag) { state.regionDrag = false; analyze(); }
       if (state.rainbowDrag) { state.rainbowDrag = false; analyze(); }
-      if (state.pathDrag) { state.pathDrag = false; analyze(); }
+      if (state.pathDrag)   { state.pathDrag = false; analyze(); }
       if (state.parityDrag) { state.parityDrag = false; analyze(); }
       if (state.colIndexDrag) { state.colIndexDrag = false; state.__colIndexPaint = null; analyze(); }
       if (state.rowIndexDrag) { state.rowIndexDrag = false; state.__rowIndexPaint = null; analyze(); }
@@ -3889,6 +4154,7 @@ window.SudokuApp = (function () {
     container.innerHTML = '';
     state.dom = {};
     attachGlobalMouseUp();
+    closeCustomDocs();   /* a full re-render (e.g. locale switch) closes the docs modal */
 
     buildSizeControls(container);
     buildFlagRow(container);

@@ -8,8 +8,9 @@
  *
  * State model:
  *   p.littleKillers = [{ side, idx, dir, sum }, ...]
- *     side: 'top' | 'bottom' | 'left' | 'right'
- *     idx:  0..N-1, position of the outer cell along that side
+ *     side: 'top' | 'bottom' | 'left' | 'right'   (edge slot, idx 0..N-1)
+ *         | 'tl' | 'tr' | 'bl' | 'br'             (corner slot — covers the
+ *           corner-to-corner main / anti diagonals; idx is ignored)
  *     dir:  'dr' | 'dl' | 'ur' | 'ul' (down-right, down-left, up-right, up-left)
  *     sum:  target sum for cells along the diagonal
  */
@@ -27,13 +28,22 @@
       dir = dirOrRows; rows = rowsOrCols; cols = colsOrDeleted; deleted = deletedMaybe || null;
     }
     const cells = [];
-    let r, c;
-    if (side === 'top')         { r = 0;        c = idx; }
-    else if (side === 'bottom') { r = rows - 1; c = idx; }
-    else if (side === 'left')   { r = idx;      c = 0; }
-    else                        { r = idx;      c = cols - 1; }
-    const dr = (dir === 'dr' || dir === 'dl') ? 1 : -1;
-    const dc = (dir === 'dr' || dir === 'ur') ? 1 : -1;
+    let r, c, dr, dc;
+    /* Corner slots sit one cell diagonally OUTSIDE a grid vertex; each has a
+       single fixed direction into the grid along the corner-to-corner
+       diagonal (e.g. 'tl' → (1,1),(2,2),…). */
+    if (side === 'tl')      { r = 0; c = 0;            dr = 1;  dc = 1; }
+    else if (side === 'tr') { r = 0; c = cols - 1;     dr = 1;  dc = -1; }
+    else if (side === 'bl') { r = rows - 1; c = 0;     dr = -1; dc = 1; }
+    else if (side === 'br') { r = rows - 1; c = cols - 1; dr = -1; dc = -1; }
+    else {
+      if (side === 'top')         { r = 0;        c = idx; }
+      else if (side === 'bottom') { r = rows - 1; c = idx; }
+      else if (side === 'left')   { r = idx;      c = 0; }
+      else                        { r = idx;      c = cols - 1; }
+      dr = (dir === 'dr' || dir === 'dl') ? 1 : -1;
+      dc = (dir === 'dr' || dir === 'ur') ? 1 : -1;
+    }
     while (r >= 0 && r < rows && c >= 0 && c < cols) {
       const i = r * cols + c;
       if (!deleted || !deleted[i]) cells.push(i);

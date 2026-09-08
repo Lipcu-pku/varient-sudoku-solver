@@ -46,6 +46,7 @@ self.onmessage = function (e) {
       solutions:      found.solutions,
       reachedCap:     !!found.reachedCap,
       invalidRegions: !!found.invalidRegions,
+      customTimeout:  !!found.customTimeout,
     });
   } catch (err) {
     self.postMessage({ id, error: String(err && err.stack || err) });

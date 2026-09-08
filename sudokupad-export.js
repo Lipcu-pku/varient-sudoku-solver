@@ -30,7 +30,12 @@
     if (side === 'top')    return RC(0,       k + 1);
     if (side === 'bottom') return RC(N + 1,   k + 1);
     if (side === 'left')   return RC(k + 1,   0);
-    return                        RC(k + 1,   N + 1);
+    if (side === 'right')  return RC(k + 1,   N + 1);
+    if (side === 'tl')     return RC(0, 0);          /* corner slots: one cell */
+    if (side === 'tr')     return RC(0, N + 1);      /* diagonally outside a   */
+    if (side === 'bl')     return RC(N + 1, 0);      /* grid vertex            */
+    if (side === 'br')     return RC(N + 1, N + 1);
+    return                        RC(0,       k + 1);
   };
   const LK_DIR = { dr: 'DR', dl: 'DL', ur: 'UR', ul: 'UL' };
 
@@ -429,6 +434,15 @@
         any = true;
       }
       if (any) { dropped.add('row-index'); legend.push(rules.indexRow[lang]); }
+    }
+    /* Custom JS rules have no fpuzzles representation — the logic is simply
+       not exported; call it out so players know to apply the code manually. */
+    const customList = (p.customRules || []).filter(r => r && r.code && r.enabled !== false);
+    if (customList.length) {
+      dropped.add('custom-constraints');
+      legend.push(lang === 'zh'
+        ? `自定义 JS 限制（未导出）：${customList.map(r => (r.name && r.name.trim()) || r.id).join('、')} — 请按规则代码自行遵守。`
+        : `Custom JS constraints (not exported): ${customList.map(r => (r.name && r.name.trim()) || r.id).join(', ')} — apply the rules in the code yourself.`);
     }
     /* Outside-shape cells: paint an opaque grey underlay so the player
        reads them as "not part of the puzzle". Native fpuzzles renders
